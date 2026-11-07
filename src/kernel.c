@@ -18,8 +18,7 @@ static void kernel_puthex(unsigned long x) {
     }
 }
 
-__attribute__((aligned(4)))
-static void kernel_trap(void) {
+void kernel_trap(void) {
     unsigned long mcause, mepc, mtval;
 
     __asm__ volatile ("csrr %0, mcause" : "=r"(mcause));
@@ -40,6 +39,13 @@ static void kernel_trap(void) {
     kernel_puthex(mtval);
     kernel_puts("\n");
 
+    if (mcause == 3) {
+        unsigned short insn = *(volatile unsigned short *)mepc;
+        mepc += ((insn & 3) == 3) ? 4 : 2;
+        __asm__ volatile ("csrw mepc, %0" : : "r"(mepc));
+        return;
+    }
+
     for (;;) {
         __asm__ volatile ("wfi");
     }
@@ -55,6 +61,4 @@ void kernel_main(unsigned long hartid, unsigned long dtb) {
     kernel_puts("DTB: ");
     kernel_puthex(dtb);
     kernel_puts("\n");
-
-    __asm__ volatile ("csrw mtvec, %0" : : "r"(kernel_trap));
 }
