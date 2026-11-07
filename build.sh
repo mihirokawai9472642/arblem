@@ -2,7 +2,7 @@
 
 set -eu
 
-CFLAGS="--target=riscv64-unknown-elf -mcmodel=medany -ffreestanding"
+CFLAGS="--target=riscv64-unknown-elf -mcmodel=medany -ffreestanding -Wall -Wextra"
 
 mkdir -p build
 
