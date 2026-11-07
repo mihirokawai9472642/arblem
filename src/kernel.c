@@ -1,5 +1,9 @@
 #define UART0 ((volatile char *)0x10000000)
 
+#define CLINT_MTIMECMP ((volatile unsigned long *)0x02004000)
+#define CLINT_MTIME ((volatile unsigned long *)0x0200bff8)
+#define TIMER_INTERVAL 10000000
+
 static void kernel_putc(char c) {
     *UART0 = c;
 }
@@ -18,12 +22,25 @@ static void kernel_puthex(unsigned long x) {
     }
 }
 
+static void kernel_timer_set(void) {
+    *CLINT_MTIMECMP = *CLINT_MTIME + TIMER_INTERVAL;
+}
+
 void kernel_trap(void) {
     unsigned long mcause, mepc, mtval;
 
     __asm__ volatile ("csrr %0, mcause" : "=r"(mcause));
     __asm__ volatile ("csrr %0, mepc" : "=r"(mepc));
     __asm__ volatile ("csrr %0, mtval" : "=r"(mtval));
+
+    if (mcause == 0x8000000000000007) {
+        kernel_puts("Tick: ");
+        kernel_puthex(*CLINT_MTIME);
+        kernel_puts("\n");
+
+        kernel_timer_set();
+        return;
+    }
 
     kernel_puts("Trap!\n");
 
@@ -61,4 +78,8 @@ void kernel_main(unsigned long hartid, unsigned long dtb) {
     kernel_puts("DTB: ");
     kernel_puthex(dtb);
     kernel_puts("\n");
+
+    kernel_timer_set();
+    __asm__ volatile ("csrs mie, %0" : : "r"(1 << 7));
+    __asm__ volatile ("csrs mstatus, %0" : : "r"(1 << 3));
 }

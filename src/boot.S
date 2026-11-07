@@ -10,6 +10,7 @@ _start:
     call kernel_main
 
 1:
+    wfi
     j 1b
 
 .bss
