@@ -2,11 +2,13 @@
 
 set -eu
 
-CFLAGS="--target=riscv64-unknown-elf -mcmodel=medany -ffreestanding -Wall -Wextra"
+CFLAGS="--target=riscv64-unknown-elf -mcmodel=medany -ffreestanding -Wall -Wextra -Iinc"
 
+rm -rf build
 mkdir -p build
 
-clang $CFLAGS -c src/boot.S -o build/boot.o
-clang $CFLAGS -c src/trap.S -o build/trap.o
-clang $CFLAGS -c src/kernel.c -o build/kernel.o
-ld.lld -T src/linker.ld -o build/kernel.elf build/boot.o build/trap.o build/kernel.o
+for src in src/*.S src/*.c; do
+    clang $CFLAGS -c "$src" -o "build/$(basename "$src").o"
+done
+
+ld.lld -T src/linker.ld -o build/kernel.elf build/*.o

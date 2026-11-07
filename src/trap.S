@@ -22,7 +22,7 @@ trap_entry:
     sd a6, 112(sp)
     sd a7, 120(sp)
 
-    call kernel_trap
+    call trap_handler
 
     ld ra, 0(sp)
     ld t0, 8(sp)
