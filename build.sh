@@ -7,7 +7,7 @@ CFLAGS="--target=riscv64-unknown-elf -mcmodel=medany -ffreestanding -Wall -Wextr
 rm -rf build
 mkdir -p build
 
-for src in src/*.S src/*.c; do
+for src in src/*.S src/*.c lib/*.c; do
     clang $CFLAGS -c "$src" -o "build/$(basename "$src").o"
 done
 
