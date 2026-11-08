@@ -10,8 +10,15 @@ void thread_entry(void);
 static unsigned char thread_stacks[THREAD_MAX][THREAD_STACK_SIZE]
 __attribute__((aligned(16)));
 static unsigned long thread_sp[THREAD_MAX];
+static void *thread_chan[THREAD_MAX];
 static int thread_count;
 static int thread_current;
+
+static void thread_idle(void) {
+    for (;;) {
+        __asm__ volatile ("wfi");
+    }
+}
 
 void thread_create(void (*entry)(void)) {
     unsigned char *top = thread_stacks[thread_count] + THREAD_STACK_SIZE;
@@ -28,21 +35,38 @@ void thread_create(void (*entry)(void)) {
 void thread_start(void) {
     unsigned long unused;
 
+    thread_create(thread_idle);
+
     thread_switch(&unused, thread_sp[0]);
 }
 
 void thread_yield(void) {
     int prev = thread_current;
 
-    thread_current++;
+    do {
+        thread_current++;
 
-    if (thread_current == thread_count) {
-        thread_current = 0;
-    }
+        if (thread_current == thread_count) {
+            thread_current = 0;
+        }
+    } while (thread_chan[thread_count] != 0);
 
     if (thread_current == prev) {
         return;
     }
 
     thread_switch(&thread_sp[prev], thread_sp[thread_current]);
+}
+
+void thread_sleep(void *chan) {
+    thread_chan[thread_current] = chan;
+    thread_yield();
+}
+
+void thread_wakeup(void *chan) {
+    for (int i = 0; i < thread_count; i++) {
+        if (thread_chan[i] == chan) {
+            thread_chan[i] = 0;
+        }
+    }
 }

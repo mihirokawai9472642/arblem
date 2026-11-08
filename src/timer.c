@@ -5,7 +5,7 @@
 #define CLINT_MTIMECMP ((volatile unsigned long *)(VIRT_CLINT + 0x4000))
 #define CLINT_MTIME    ((volatile unsigned long *)(VIRT_CLINT + 0xbff8))
 
-#define TIMER_INTERVAL VIRT_TIMEBASE_FREQ
+#define TIMER_INTERVAL (VIRT_TIMEBASE_FREQ / 100)
 
 static unsigned long timer_tick_count;
 

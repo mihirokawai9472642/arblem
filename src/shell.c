@@ -10,11 +10,7 @@ static void shell_readline(char *line) {
     int len = 0;
 
     for (;;) {
-        int c = uart_getc();
-
-        if (c < 0) {
-            continue;
-        }
+        char c = uart_getc();
 
         if (c == '\r' || c == '\n') {
             kprintf("\n");
