@@ -1,5 +1,6 @@
 #include "kprintf.h"
 #include "riscv.h"
+#include "thread.h"
 #include "timer.h"
 
 void trap_handler(void) {
@@ -9,6 +10,8 @@ void trap_handler(void) {
 
     if (cause == MCAUSE_MACHINE_TIMER) {
         timer_interrupt();
+        thread_yield();
+        csr_write(mepc, epc);
         return;
     }
 

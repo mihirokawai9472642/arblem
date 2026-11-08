@@ -1,5 +1,6 @@
 .section .text
 .global thread_switch
+.global thread_entry
 
 thread_switch:
     addi sp, sp, -112
@@ -38,3 +39,7 @@ thread_switch:
     addi sp, sp, 112
 
     ret
+
+thread_entry:
+    csrsi mstatus, 8
+    jr s0

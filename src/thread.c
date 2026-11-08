@@ -5,8 +5,9 @@
 #define THREAD_FRAME_SIZE 112
 
 void thread_switch(unsigned long *old_sp, unsigned long new_sp);
+void thread_entry(void);
 
-static unsigned char thread_stacks[THREAD_MAX][THREAD_STACK_SIZE];
+static unsigned char thread_stacks[THREAD_MAX][THREAD_STACK_SIZE]
 __attribute__((aligned(16)));
 static unsigned long thread_sp[THREAD_MAX];
 static int thread_count;
@@ -16,7 +17,8 @@ void thread_create(void (*entry)(void)) {
     unsigned char *top = thread_stacks[thread_count] + THREAD_STACK_SIZE;
     unsigned long *frame = (unsigned long *)(top - THREAD_FRAME_SIZE);
 
-    frame[0] = (unsigned long)entry;
+    frame[0] = (unsigned long)thread_entry;
+    frame[1] = (unsigned long)entry;
 
     thread_sp[thread_count] = (unsigned long)frame;
 

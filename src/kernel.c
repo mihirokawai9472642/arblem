@@ -1,5 +1,4 @@
 #include "kprintf.h"
-#include "riscv.h"
 #include "thread.h"
 #include "timer.h"
 
@@ -12,7 +11,6 @@ static void thread_a(void) {
     for (;;) {
         kprintf("A\n");
         delay();
-        thread_yield();
     }
 }
 
@@ -20,7 +18,6 @@ static void thread_b(void) {
     for (;;) {
         kprintf("B\n");
         delay();
-        thread_yield();
     }
 }
 
@@ -31,7 +28,6 @@ void kernel_main(unsigned long hartid, unsigned long dtb) {
     kprintf("DTB: %x\n", dtb);
 
     timer_init();
-    csr_set(mstatus, MSTATUS_MIE);
 
     thread_create(thread_a);
     thread_create(thread_b);
