@@ -9,4 +9,10 @@ SECTIONS {
     .rodata : {
         *(.rodata .rodata.*)
     }
+
+    .bss : {
+        __bss_start = .;
+        *(.bss .bss.* .sbss .sbss.*)
+        __bss_end = .;
+    }
 }
