@@ -1,9 +1,15 @@
 .section .text
 .global trap_entry
+.global trap_enter_user
 .balign 4
 
 trap_entry:
-    addi sp, sp, -128
+    csrrw sp, mscratch, sp
+    bnez sp, 1f
+    csrr sp, mscratch
+
+1:
+    addi sp, sp, -144
 
     sd ra, 0(sp)
     sd t0, 8(sp)
@@ -22,8 +28,18 @@ trap_entry:
     sd a6, 112(sp)
     sd a7, 120(sp)
 
+    csrrw t0, mscratch, zero
+    sd t0, 128(sp)
+
+    mv a0, sp
     call trap_handler
 
+    csrr t0, mstatus
+    srli t0, t0, 11
+    andi t0, t0, 3
+    bnez t0, 2f
+
+2:
     ld ra, 0(sp)
     ld t0, 8(sp)
     ld t1, 16(sp)
@@ -40,7 +56,18 @@ trap_entry:
     ld a5, 104(sp)
     ld a6, 112(sp)
     ld a7, 120(sp)
+    ld sp, 128(sp)
 
-    addi sp, sp, 128
+    mret
+
+trap_enter_user:
+    csrci mstatus, 8
+
+    li t0, 0x1800
+    csrc mstatus, t0
+    csrw mepc, a0
+
+    csrw mscratch, sp
+    mv sp, a1
 
     mret

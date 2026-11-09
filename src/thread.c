@@ -13,6 +13,7 @@ static unsigned long thread_sp[THREAD_MAX];
 static void *thread_chan[THREAD_MAX];
 static int thread_count;
 static int thread_current;
+static char thread_dead;
 
 static void thread_idle(void) {
     for (;;) {
@@ -69,4 +70,8 @@ void thread_wakeup(void *chan) {
             thread_chan[i] = 0;
         }
     }
+}
+
+void thread_exit(void) {
+    thread_sleep(&thread_dead);
 }

@@ -5,3 +5,4 @@ void thread_start(void);
 void thread_yield(void);
 void thread_sleep(void *chan);
 void thread_wakeup(void *chan);
+void thread_exit(void);
