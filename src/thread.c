@@ -49,7 +49,7 @@ void thread_yield(void) {
         if (thread_current == thread_count) {
             thread_current = 0;
         }
-    } while (thread_chan[thread_count] != 0);
+    } while (thread_chan[thread_current] != 0);
 
     if (thread_current == prev) {
         return;
