@@ -29,7 +29,12 @@
 #define SCAUSE_SUPERVISOR_EXTERNAL (SCAUSE_INTERRUPT | 9)
 #define SCAUSE_USER_ECALL          8
 
-#define PMP_R   (1UL << 0)
-#define PMP_W   (1UL << 1)
-#define PMP_X   (1UL << 2)
-#define PMP_TOR (1UL << 3)
+#define SATP_SV39 (8UL << 60)
+
+#define PTE_V (1UL << 0)
+#define PTE_R (1UL << 1)
+#define PTE_W (1UL << 2)
+#define PTE_X (1UL << 3)
+#define PTE_U (1UL << 4)
+#define PTE_A (1UL << 6)
+#define PTE_D (1UL << 7)

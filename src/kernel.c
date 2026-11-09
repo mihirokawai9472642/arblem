@@ -7,6 +7,7 @@
 #include "trap.h"
 #include "uart.h"
 #include "virt.h"
+#include "vm.h"
 
 extern char __kernel_end[];
 extern char __user_stack_top[];
@@ -24,6 +25,7 @@ void kernel_main(unsigned long hartid, unsigned long dtb) {
     kprintf("DTB: %x\n", dtb);
 
     page_init((unsigned long)__kernel_end, dtb);
+    vm_init(dtb);
 
     uart_init();
     plic_init();

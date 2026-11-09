@@ -25,6 +25,12 @@ void *page_alloc(void) {
     page_free_list = page->next;
     page_free_pages--;
 
+    unsigned long *words = (unsigned long *)page;
+
+    for (unsigned long i = 0; i < PAGE_SIZE / sizeof(unsigned long); i++) {
+        words[i] = 0;
+    }
+
     return page;
 }
 

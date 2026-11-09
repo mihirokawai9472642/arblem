@@ -1,6 +1,8 @@
 SECTIONS {
     . = 0x80200000;
 
+    __kernel_start = .;
+
     .text : {
         *(.text.boot)
         *(EXCLUDE_FILE(*/user/*) .text .text.*)
