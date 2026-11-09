@@ -1,22 +1,18 @@
 #include "kprintf.h"
 #include "page.h"
 #include "plic.h"
+#include "proc.h"
 #include "shell.h"
 #include "thread.h"
 #include "timer.h"
-#include "trap.h"
 #include "uart.h"
 #include "virt.h"
 #include "vm.h"
 
 extern char __kernel_end[];
-extern char __user_stack_top[];
 
-void user_main(void);
-
-static void kernel_user_thread(void) {
-    trap_enter_user((unsigned long)user_main, (unsigned long)__user_stack_top);
-}
+extern char user_hello[], user_hello_end[];
+extern char user_count[], user_count_end[];
 
 void kernel_main(unsigned long hartid, unsigned long dtb) {
     kprintf("Hello World from Arblem :)\n");
@@ -32,7 +28,9 @@ void kernel_main(unsigned long hartid, unsigned long dtb) {
     plic_enable(VIRT_UART0_IRQ);
     timer_init();
 
-    thread_create(kernel_user_thread);
-    thread_create(shell_main);
+    proc_create(user_hello, user_hello_end - user_hello);
+    proc_create(user_count, user_count_end - user_count);
+    proc_create(user_count, user_count_end - user_count);
+    thread_create(shell_main, 0);
     thread_start();
 }

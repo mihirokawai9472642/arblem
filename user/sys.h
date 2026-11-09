@@ -15,6 +15,12 @@ static inline void sys_putc(char c) {
     sys_call(SYSCALL_PUTC, c);
 }
 
+static inline void sys_puts(const char *s) {
+    while (*s) {
+        sys_putc(*s++);
+    }
+}
+
 static inline void sys_exit(void) {
     sys_call(SYSCALL_EXIT, 0);
 }

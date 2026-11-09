@@ -1,11 +1,7 @@
 #include "sys.h"
 
-void user_main(void) {
-    const char *s = "Hello World from U-mode!\n";
+int main(void) {
+    sys_puts("Hello World from U-mode!\n");
 
-    while (*s) {
-        sys_putc(*s++);
-    }
-
-    sys_exit();
+    return 0;
 }
