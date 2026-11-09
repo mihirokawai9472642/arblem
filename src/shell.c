@@ -1,5 +1,6 @@
 #include "shell.h"
 #include "kprintf.h"
+#include "page.h"
 #include "str.h"
 #include "timer.h"
 #include "uart.h"
@@ -42,7 +43,14 @@ static void shell_exec(const char *line) {
 
     if (str_equal(line, "help")) {
         kprintf("help: Show help message.\n");
+        kprintf("pages: Show free pages.\n");
         kprintf("ticks: Show timer ticks.\n");
+
+        return;
+    }
+
+    if (str_equal(line, "pages")) {
+        kprintf("%x\n", page_free_count());
 
         return;
     }

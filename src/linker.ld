@@ -25,4 +25,6 @@ SECTIONS {
         . = ALIGN(4096);
         __user_end = .;
     }
+
+    __kernel_end = .;
 }

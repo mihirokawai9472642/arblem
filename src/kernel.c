@@ -1,4 +1,5 @@
 #include "kprintf.h"
+#include "page.h"
 #include "plic.h"
 #include "pmp.h"
 #include "shell.h"
@@ -8,6 +9,7 @@
 #include "uart.h"
 #include "virt.h"
 
+extern char __kernel_end[];
 extern char __user_start[];
 extern char __user_end[];
 extern char __user_stack_top[];
@@ -23,6 +25,8 @@ void kernel_main(unsigned long hartid, unsigned long dtb) {
 
     kprintf("HartID: %x\n", hartid);
     kprintf("DTB: %x\n", dtb);
+
+    page_init((unsigned long)__kernel_end, dtb);
 
     uart_init();
     plic_init();

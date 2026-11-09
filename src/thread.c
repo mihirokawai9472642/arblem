@@ -1,14 +1,12 @@
 #include "thread.h"
+#include "page.h"
 
 #define THREAD_MAX        4
-#define THREAD_STACK_SIZE 4096
 #define THREAD_FRAME_SIZE 112
 
 void thread_switch(unsigned long *old_sp, unsigned long new_sp);
 void thread_entry(void);
 
-static unsigned char thread_stacks[THREAD_MAX][THREAD_STACK_SIZE]
-__attribute__((aligned(16)));
 static unsigned long thread_sp[THREAD_MAX];
 static void *thread_chan[THREAD_MAX];
 static int thread_count;
@@ -22,7 +20,7 @@ static void thread_idle(void) {
 }
 
 void thread_create(void (*entry)(void)) {
-    unsigned char *top = thread_stacks[thread_count] + THREAD_STACK_SIZE;
+    unsigned char *top = (unsigned char *)page_alloc() + PAGE_SIZE;
     unsigned long *frame = (unsigned long *)(top - THREAD_FRAME_SIZE);
 
     frame[0] = (unsigned long)thread_entry;
