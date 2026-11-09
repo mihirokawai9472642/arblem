@@ -4,9 +4,9 @@
 .balign 4
 
 trap_entry:
-    csrrw sp, mscratch, sp
+    csrrw sp, sscratch, sp
     bnez sp, 1f
-    csrr sp, mscratch
+    csrr sp, sscratch
 
 1:
     addi sp, sp, -144
@@ -28,19 +28,18 @@ trap_entry:
     sd a6, 112(sp)
     sd a7, 120(sp)
 
-    csrrw t0, mscratch, zero
+    csrrw t0, sscratch, zero
     sd t0, 128(sp)
 
     mv a0, sp
     call trap_handler
 
-    csrr t0, mstatus
-    srli t0, t0, 11
-    andi t0, t0, 3
+    csrr t0, sstatus
+    andi t0, t0, 0x100
     bnez t0, 2f
 
     addi t0, sp, 144
-    csrw mscratch, t0
+    csrw sscratch, t0
 
 2:
     ld ra, 0(sp)
@@ -61,16 +60,16 @@ trap_entry:
     ld a7, 120(sp)
     ld sp, 128(sp)
 
-    mret
+    sret
 
 trap_enter_user:
-    csrci mstatus, 8
+    csrci sstatus, 2
 
-    li t0, 0x1800
-    csrc mstatus, t0
-    csrw mepc, a0
+    li t0, 0x100
+    csrc sstatus, t0
+    csrw sepc, a0
 
-    csrw mscratch, sp
+    csrw sscratch, sp
     mv sp, a1
 
-    mret
+    sret

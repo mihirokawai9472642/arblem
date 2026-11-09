@@ -18,16 +18,16 @@
     __asm__ volatile ("csrc " #csr ", %0" : : "r"((unsigned long)(bits))); \
 })
 
-#define MSTATUS_MPP (3UL << 11)
-#define MSTATUS_MIE (1UL << 3)
-#define MIE_MTIE    (1UL << 7)
-#define MIE_MEIE    (1UL << 11)
+#define SSTATUS_SIE (1UL << 1)
+#define SSTATUS_SPP (1UL << 8)
+#define SIE_STIE    (1UL << 5)
+#define SIE_SEIE    (1UL << 9)
 
-#define MCAUSE_INTERRUPT        (1UL << 63)
-#define MCAUSE_BREAKPOINT       3
-#define MCAUSE_MACHINE_TIMER    (MCAUSE_INTERRUPT | 7)
-#define MCAUSE_MACHINE_EXTERNAL (MCAUSE_INTERRUPT | 11)
-#define MCAUSE_USER_ECALL       8
+#define SCAUSE_INTERRUPT           (1UL << 63)
+#define SCAUSE_BREAKPOINT          3
+#define SCAUSE_SUPERVISOR_TIMER    (SCAUSE_INTERRUPT | 5)
+#define SCAUSE_SUPERVISOR_EXTERNAL (SCAUSE_INTERRUPT | 9)
+#define SCAUSE_USER_ECALL          8
 
 #define PMP_R   (1UL << 0)
 #define PMP_W   (1UL << 1)

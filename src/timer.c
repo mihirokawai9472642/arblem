@@ -2,20 +2,17 @@
 #include "riscv.h"
 #include "virt.h"
 
-#define CLINT_MTIMECMP ((volatile unsigned long *)(VIRT_CLINT + 0x4000))
-#define CLINT_MTIME    ((volatile unsigned long *)(VIRT_CLINT + 0xbff8))
-
 #define TIMER_INTERVAL (VIRT_TIMEBASE_FREQ / 100)
 
 static unsigned long timer_tick_count;
 
 static void timer_set_next(void) {
-    *CLINT_MTIMECMP = *CLINT_MTIME + TIMER_INTERVAL;
+    csr_write(stimecmp, csr_read(time) + TIMER_INTERVAL);
 }
 
 void timer_init(void) {
     timer_set_next();
-    csr_set(mie, MIE_MTIE);
+    csr_set(sie, SIE_STIE);
 }
 
 void timer_interrupt(void) {

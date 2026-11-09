@@ -41,5 +41,5 @@ thread_switch:
     ret
 
 thread_entry:
-    csrsi mstatus, 8
+    csrsi sstatus, 2
     jr s0

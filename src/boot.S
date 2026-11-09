@@ -15,8 +15,8 @@ _start:
 
 3:
     la t0, trap_entry
-    csrw mtvec, t0
-    csrw mscratch, zero
+    csrw stvec, t0
+    csrw sscratch, zero
 
     call kernel_main
 

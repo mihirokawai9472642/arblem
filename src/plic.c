@@ -3,13 +3,13 @@
 #include "virt.h"
 
 #define PLIC_PRIORITY(irq) ((volatile unsigned int *)(VIRT_PLIC + 4 * (irq)))
-#define PLIC_ENABLE        ((volatile unsigned int *)(VIRT_PLIC + 0x2000))
-#define PLIC_THRESHOLD     ((volatile unsigned int *)(VIRT_PLIC + 0x200000))
-#define PLIC_CLAIM         ((volatile unsigned int *)(VIRT_PLIC + 0x200004))
+#define PLIC_ENABLE        ((volatile unsigned int *)(VIRT_PLIC + 0x2080))
+#define PLIC_THRESHOLD     ((volatile unsigned int *)(VIRT_PLIC + 0x201000))
+#define PLIC_CLAIM         ((volatile unsigned int *)(VIRT_PLIC + 0x201004))
 
 void plic_init(void) {
     *PLIC_THRESHOLD = 0;
-    csr_set(mie, MIE_MEIE);
+    csr_set(sie, SIE_SEIE);
 }
 
 void plic_enable(unsigned int irq) {

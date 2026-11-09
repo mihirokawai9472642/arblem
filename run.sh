@@ -1,3 +1,3 @@
 #!/bin/sh
 
-exec qemu-system-riscv64 -machine virt -bios none -nographic -kernel build/kernel.elf
+exec qemu-system-riscv64 -machine virt -bios build/firmware.elf -nographic -kernel build/kernel.elf

@@ -1,7 +1,6 @@
 #include "kprintf.h"
 #include "page.h"
 #include "plic.h"
-#include "pmp.h"
 #include "shell.h"
 #include "thread.h"
 #include "timer.h"
@@ -10,8 +9,6 @@
 #include "virt.h"
 
 extern char __kernel_end[];
-extern char __user_start[];
-extern char __user_end[];
 extern char __user_stack_top[];
 
 void user_main(void);
@@ -31,7 +28,6 @@ void kernel_main(unsigned long hartid, unsigned long dtb) {
     uart_init();
     plic_init();
     plic_enable(VIRT_UART0_IRQ);
-    pmp_init((unsigned long)__user_start, (unsigned long)__user_end);
     timer_init();
 
     thread_create(kernel_user_thread);
