@@ -39,6 +39,9 @@ trap_entry:
     andi t0, t0, 3
     bnez t0, 2f
 
+    addi t0, sp, 144
+    csrw mscratch, t0
+
 2:
     ld ra, 0(sp)
     ld t0, 8(sp)
