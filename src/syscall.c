@@ -1,5 +1,7 @@
 #include "syscall.h"
+#include "page.h"
 #include "thread.h"
+#include "timer.h"
 #include "uart.h"
 #include "vm.h"
 
@@ -27,6 +29,20 @@ static unsigned long syscall_write(unsigned long buf, unsigned long len) {
     return len;
 }
 
+static unsigned long syscall_read(unsigned long buf, unsigned long len) {
+    if (len == 0) {
+        return 0;
+    }
+
+    char c = uart_getc();
+
+    if (vm_copy_to_user(buf, &c, 1) != 0) {
+        return -1;
+    }
+
+    return 1;
+}
+
 unsigned long syscall_handle(unsigned long num, unsigned long arg0, unsigned long arg1) {
     if (num == SYSCALL_WRITE) {
         return syscall_write(arg0, arg1);
@@ -34,6 +50,18 @@ unsigned long syscall_handle(unsigned long num, unsigned long arg0, unsigned lon
 
     if (num == SYSCALL_EXIT) {
         thread_exit();
+    }
+
+    if (num == SYSCALL_READ) {
+        return syscall_read(arg0, arg1);
+    }
+
+    if (num == SYSCALL_TICKS) {
+        return timer_ticks();
+    }
+
+    if (num == SYSCALL_PAGES) {
+        return page_free_count();
     }
 
     return -1;

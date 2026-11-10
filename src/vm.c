@@ -76,23 +76,50 @@ void vm_switch(unsigned long *root) {
     __asm__ volatile ("sfence.vma" : : : "memory");
 }
 
-int vm_copy_from_user(void *dst, unsigned long src, unsigned long len) {
-    unsigned long end = src + len;
+static int vm_check_user(unsigned long addr, unsigned long len, unsigned long perm) {
+    unsigned long end = addr + len;
 
-    if (end < src || end > VM_VA_END) {
+    if (end < addr || end > VM_VA_END) {
         return -1;
     }
 
-    for (unsigned long va = src & ~(PAGE_SIZE - 1); va < end; va += PAGE_SIZE) {
+    for (unsigned long va = addr & ~(PAGE_SIZE - 1); va < end; va += PAGE_SIZE) {
         unsigned long *pte = vm_walk(vm_current_root, va, 0);
 
-        if (pte == 0 || (*pte & (PTE_V | PTE_U | PTE_R)) != (PTE_V | PTE_U | PTE_R)) {
+        if (pte == 0 || (*pte & (PTE_V | PTE_U | perm)) != (PTE_V | PTE_U | perm)) {
             return -1;
         }
     }
 
+    return 0;
+}
+
+int vm_copy_from_user(void *dst, unsigned long src, unsigned long len) {
+    if (vm_check_user(src, len, PTE_R) != 0) {
+        return -1;
+    }
+
     char *d = dst;
     const char *s = (const char *)src;
+
+    csr_set(sstatus, SSTATUS_SUM);
+
+    for (unsigned long i = 0; i < len; i++) {
+        d[i] = s[i];
+    }
+
+    csr_clear(sstatus, SSTATUS_SUM);
+
+    return 0;
+}
+
+int vm_copy_to_user(unsigned long dst, const void *src, unsigned long len) {
+    if (vm_check_user(dst, len, PTE_W) != 0) {
+        return -1;
+    }
+
+    char *d = (char *)dst;
+    const char *s = src;
 
     csr_set(sstatus, SSTATUS_SUM);
 

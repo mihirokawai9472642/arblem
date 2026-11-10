@@ -2,7 +2,6 @@
 #include "page.h"
 #include "plic.h"
 #include "proc.h"
-#include "shell.h"
 #include "thread.h"
 #include "timer.h"
 #include "uart.h"
@@ -13,6 +12,7 @@ extern char __kernel_end[];
 
 extern char user_hello[], user_hello_end[];
 extern char user_count[], user_count_end[];
+extern char user_shell[], user_shell_end[];
 
 void kernel_main(unsigned long hartid, unsigned long dtb) {
     kprintf("Hello World from Arblem :)\n");
@@ -31,6 +31,6 @@ void kernel_main(unsigned long hartid, unsigned long dtb) {
     proc_create(user_hello, user_hello_end - user_hello);
     proc_create(user_count, user_count_end - user_count);
     proc_create(user_count, user_count_end - user_count);
-    thread_create(shell_main, 0);
+    proc_create(user_shell, user_shell_end - user_shell);
     thread_start();
 }

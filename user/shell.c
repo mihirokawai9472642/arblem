@@ -1,20 +1,28 @@
-#include "shell.h"
-#include "kprintf.h"
-#include "page.h"
 #include "str.h"
-#include "timer.h"
-#include "uart.h"
+#include "sys.h"
 
 #define SHELL_LINE_MAX 64
+
+static void shell_puthex(unsigned long x) {
+    char buf[19] = "0x";
+
+    for (int i = 0; i < 16; i++) {
+        buf[2 + i] = "0123456789abcdef"[(x >> (60 - 4 * i)) & 0xf];
+    }
+
+    buf[18] = '\n';
+
+    sys_write(buf, sizeof(buf));
+}
 
 static void shell_readline(char *line) {
     int len = 0;
 
     for (;;) {
-        char c = uart_getc();
+        char c = sys_getc();
 
         if (c == '\r' || c == '\n') {
-            kprintf("\n");
+            sys_putc('\n');
             line[len] = '\0';
 
             return;
@@ -23,7 +31,7 @@ static void shell_readline(char *line) {
         if (c == 0x7f || c == '\b') {
             if (len > 0) {
                 len--;
-                kprintf("\b \b");
+                sys_puts("\b \b");
             }
 
             continue;
@@ -31,7 +39,7 @@ static void shell_readline(char *line) {
 
         if (len < SHELL_LINE_MAX - 1) {
             line[len++] = c;
-            uart_putc(c);
+            sys_putc(c);
         }
     }
 }
@@ -42,33 +50,33 @@ static void shell_exec(const char *line) {
     }
 
     if (str_equal(line, "help")) {
-        kprintf("help: Show help message.\n");
-        kprintf("pages: Show free pages.\n");
-        kprintf("ticks: Show timer ticks.\n");
+        sys_puts("help: Show help message.\n");
+        sys_puts("pages: Show free pages.\n");
+        sys_puts("ticks: Show timer ticks.\n");
 
         return;
     }
 
     if (str_equal(line, "pages")) {
-        kprintf("%x\n", page_free_count());
+        shell_puthex(sys_pages());
 
         return;
     }
 
     if (str_equal(line, "ticks")) {
-        kprintf("%x\n", timer_ticks());
+        shell_puthex(sys_ticks());
 
         return;
     }
 
-    kprintf("Unknown command\n");
+    sys_puts("Unknown command\n");
 }
 
-void shell_main(void) {
+int main(void) {
     char line[SHELL_LINE_MAX];
 
     for (;;) {
-        kprintf("> ");
+        sys_puts("> ");
         shell_readline(line);
         shell_exec(line);
     }

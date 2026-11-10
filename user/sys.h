@@ -33,3 +33,23 @@ static inline void sys_puts(const char *s) {
 static inline void sys_exit(void) {
     sys_call(SYSCALL_EXIT, 0, 0);
 }
+
+static inline long sys_read(char *buf, unsigned long len) {
+    return sys_call(SYSCALL_READ, (long)buf, len);
+}
+
+static inline char sys_getc(void) {
+    char c;
+
+    sys_read(&c, 1);
+
+    return c;
+}
+
+static inline unsigned long sys_ticks(void) {
+    return sys_call(SYSCALL_TICKS, 0, 0);
+}
+
+static inline unsigned long sys_pages(void) {
+    return sys_call(SYSCALL_PAGES, 0, 0);
+}

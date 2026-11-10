@@ -1,5 +1,4 @@
 #include "uart.h"
-#include "riscv.h"
 #include "thread.h"
 #include "virt.h"
 
@@ -31,12 +30,9 @@ static int uart_poll(void) {
 
 char uart_getc(void) {
     for (;;) {
-        csr_clear(sstatus, SSTATUS_SIE);
-
         int c = uart_poll();
 
         if (c >= 0) {
-            csr_set(sstatus, SSTATUS_SIE);
             return c;
         }
 

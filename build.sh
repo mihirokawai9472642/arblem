@@ -3,7 +3,7 @@
 set -eu
 
 CFLAGS="--target=riscv64-unknown-elf -mcmodel=medany -ffreestanding -Wall -Wextra -Iinc"
-USER_PROGS="hello count"
+USER_PROGS="hello count shell"
 
 rm -rf build
 
@@ -12,16 +12,16 @@ compile() {
     clang $CFLAGS -c "$1" -o "build/$1.o"
 }
 
-for src in user/*.c; do
+for src in lib/*.c user/*.c; do
     compile "$src"
 done
 
 for prog in $USER_PROGS; do
-    ld.lld -T user/linker.ld -o "build/user/$prog.elf" build/user/start.c.o "build/user/$prog.c.o"
+    ld.lld -T user/linker.ld -o "build/user/$prog.elf" build/user/start.c.o "build/user/$prog.c.o" build/lib/*.o
     llvm-objcopy --set-section-flags .bss=alloc,contents -O binary "build/user/$prog.elf" "build/user/$prog.bin"
 done
 
-for src in firmware/*.S src/*.S src/*.c lib/*.c; do
+for src in firmware/*.S src/*.S src/*.c; do
     compile "$src"
 done
 
