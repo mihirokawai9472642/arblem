@@ -42,7 +42,7 @@ void trap_handler(struct trap_frame *f) {
     }
 
     if (cause == SCAUSE_USER_ECALL) {
-        f->a0 = syscall_handle(f->a7, f->a0);
+        f->a0 = syscall_handle(f->a7, f->a0, f->a1);
         csr_write(sepc, epc + 4);
         return;
     }

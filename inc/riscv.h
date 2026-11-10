@@ -7,19 +7,20 @@
 })
 
 #define csr_write(csr, val) ({                                            \
-    __asm__ volatile ("csrw " #csr ", %0" : : "r"((unsigned long)(val))); \
+    __asm__ volatile ("csrw " #csr ", %0" : : "r"((unsigned long)(val)) : "memory"); \
 })
 
 #define csr_set(csr, bits) ({                                              \
-    __asm__ volatile ("csrs " #csr ", %0" : : "r"((unsigned long)(bits))); \
+    __asm__ volatile ("csrs " #csr ", %0" : : "r"((unsigned long)(bits)) : "memory"); \
 })
 
 #define csr_clear(csr, bits) ({                                              \
-    __asm__ volatile ("csrc " #csr ", %0" : : "r"((unsigned long)(bits))); \
+    __asm__ volatile ("csrc " #csr ", %0" : : "r"((unsigned long)(bits)) : "memory"); \
 })
 
 #define SSTATUS_SIE (1UL << 1)
 #define SSTATUS_SPP (1UL << 8)
+#define SSTATUS_SUM (1UL << 18)
 #define SIE_STIE    (1UL << 5)
 #define SIE_SEIE    (1UL << 9)
 

@@ -6,18 +6,25 @@
 #define PTE_FROM_PA(pa) (((unsigned long)(pa) >> 12) << 10)
 #define PTE_TO_PA(pte)   (((pte) >> 10) << 12)
 
+#define VM_VA_END (1UL << 38)
+
 extern char __kernel_start[];
 extern char __kernel_end[];
 
 static unsigned long *vm_kernel_root;
+static unsigned long *vm_current_root;
 
-static unsigned long *vm_walk(unsigned long *root, unsigned long va) {
+static unsigned long *vm_walk(unsigned long *root, unsigned long va, int alloc) {
     unsigned long *table = root;
 
     for (int level = 2; level > 0; level--) {
         unsigned long *pte = &table[(va >> (12 + 9 * level)) & 0x1ff];
 
         if ((*pte & PTE_V) == 0) {
+            if (!alloc) {
+                return 0;
+            }
+
             *pte = PTE_FROM_PA(page_alloc()) | PTE_V;
         }
 
@@ -29,7 +36,7 @@ static unsigned long *vm_walk(unsigned long *root, unsigned long va) {
 
 void vm_map(unsigned long *root, unsigned long va, unsigned long pa, unsigned long size, unsigned long perm) {
     for (unsigned long off = 0; off < size; off += PAGE_SIZE) {
-        *vm_walk(root, va + off) = PTE_FROM_PA(pa + off) | perm | PTE_A | PTE_D | PTE_V;
+        *vm_walk(root, va + off, 1) = PTE_FROM_PA(pa + off) | perm | PTE_A | PTE_D | PTE_V;
     }
 }
 
@@ -63,6 +70,37 @@ void vm_switch(unsigned long *root) {
         root = vm_kernel_root;
     }
 
+    vm_current_root = root;
+
     csr_write(satp, SATP_SV39 | ((unsigned long)root >> 12));
-    __asm__ volatile ("sfence.vma");
+    __asm__ volatile ("sfence.vma" : : : "memory");
+}
+
+int vm_copy_from_user(void *dst, unsigned long src, unsigned long len) {
+    unsigned long end = src + len;
+
+    if (end < src || end > VM_VA_END) {
+        return -1;
+    }
+
+    for (unsigned long va = src & ~(PAGE_SIZE - 1); va < end; va += PAGE_SIZE) {
+        unsigned long *pte = vm_walk(vm_current_root, va, 0);
+
+        if (pte == 0 || (*pte & (PTE_V | PTE_U | PTE_R)) != (PTE_V | PTE_U | PTE_R)) {
+            return -1;
+        }
+    }
+
+    char *d = dst;
+    const char *s = (const char *)src;
+
+    csr_set(sstatus, SSTATUS_SUM);
+
+    for (unsigned long i = 0; i < len; i++) {
+        d[i] = s[i];
+    }
+
+    csr_clear(sstatus, SSTATUS_SUM);
+
+    return 0;
 }
