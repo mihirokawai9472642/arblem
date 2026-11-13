@@ -77,6 +77,10 @@ static const char *shell_strerror(long err) {
         return "Too many processes\n";
     }
 
+    if (err == -ERR_NOEXEC) {
+        return "Bad executable\n";
+    }
+
     return "Error\n";
 }
 

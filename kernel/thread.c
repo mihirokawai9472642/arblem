@@ -23,13 +23,15 @@ static int thread_current = -1;
 static char thread_dead;
 static char thread_exit_wait;
 
-static void thread_idle(void) {
+static void thread_idle(unsigned long arg) {
+    (void)arg;
+
     for (;;) {
         __asm__ volatile ("wfi");
     }
 }
 
-int thread_create(void (*entry)(void), unsigned long *vm) {
+int thread_create(void (*entry)(unsigned long), unsigned long arg, unsigned long *vm) {
     int id = 0;
 
     while (id < THREAD_MAX && thread_table[id].stack != 0) {
@@ -50,6 +52,7 @@ int thread_create(void (*entry)(void), unsigned long *vm) {
 
     frame[0] = (unsigned long)thread_entry;
     frame[1] = (unsigned long)entry;
+    frame[2] = arg;
 
     struct thread *t = &thread_table[id];
 
@@ -65,7 +68,7 @@ int thread_create(void (*entry)(void), unsigned long *vm) {
 void thread_start(void) {
     unsigned long unused;
 
-    if (thread_create(thread_idle, 0) < 0) {
+    if (thread_create(thread_idle, 0, 0) < 0) {
         panic("cannot create the idle thread");
     }
 

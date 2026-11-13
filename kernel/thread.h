@@ -3,7 +3,7 @@
 #define THREAD_FRAME_SIZE 112
 
 #ifndef __ASSEMBLER__
-int thread_create(void (*entry)(void), unsigned long *vm);
+int thread_create(void (*entry)(unsigned long), unsigned long arg, unsigned long *vm);
 void thread_start(void);
 void thread_yield(void);
 void thread_sleep(void *chan);

@@ -45,4 +45,5 @@ thread_switch:
 
 thread_entry:
     csrsi sstatus, SSTATUS_SIE
+    mv a0, s1
     jr s0
