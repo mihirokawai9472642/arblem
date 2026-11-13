@@ -42,7 +42,7 @@ void trap_handler(struct trap_frame *f) {
         return;
     }
 
-    if (cause == SCAUSE_USER_ECALL) {
+    if (cause == EXC_USER_ECALL) {
         f->a0 = syscall_handle(f->a7, f->a0, f->a1);
         csr_write(sepc, epc + 4);
         csr_write(sstatus, status);
@@ -54,7 +54,7 @@ void trap_handler(struct trap_frame *f) {
     kprintf("sepc: %x\n", epc);
     kprintf("stval: %x\n", tval);
 
-    if (cause == SCAUSE_BREAKPOINT && (status & SSTATUS_SPP)) {
+    if (cause == EXC_BREAKPOINT && (status & SSTATUS_SPP)) {
         unsigned short insn = *(volatile unsigned short *)epc;
         epc += ((insn & 3) == 3) ? 4 : 2;
         csr_write(sepc, epc);

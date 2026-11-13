@@ -38,5 +38,5 @@ The shell accepts `help`, `pages` and `ticks`, and runs the user programs `hello
 | `kernel/`   | S-mode kernel and its private headers                     |
 | `user/`     | U-mode programs and their system call wrappers            |
 | `lib/`      | Code linked into both the kernel and user programs        |
-| `inc/`      | Headers shared by the kernel and user programs            |
+| `inc/`      | Headers shared by more than one program                   |
 | `test/`     | Smoke test run by `make test`                             |
