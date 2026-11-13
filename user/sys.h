@@ -1,5 +1,6 @@
 #pragma once
 
+#include "str.h"
 #include "syscall.h"
 
 static inline long sys_call(long num, long arg0, long arg1) {
@@ -21,13 +22,7 @@ static inline void sys_putc(char c) {
 }
 
 static inline void sys_puts(const char *s) {
-    unsigned long len = 0;
-
-    while (s[len]) {
-        len++;
-    }
-
-    sys_write(s, len);
+    sys_write(s, str_len(s));
 }
 
 static inline void sys_exit(void) {
@@ -52,4 +47,12 @@ static inline unsigned long sys_ticks(void) {
 
 static inline unsigned long sys_pages(void) {
     return sys_call(SYSCALL_PAGES, 0, 0);
+}
+
+static inline long sys_spawn(const char *name, unsigned long len) {
+    return sys_call(SYSCALL_SPAWN, (long)name, len);
+}
+
+static inline long sys_wait(long pid) {
+    return sys_call(SYSCALL_WAIT, pid, 0);
 }

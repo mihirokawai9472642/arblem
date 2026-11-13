@@ -53,6 +53,7 @@ static void shell_exec(const char *line) {
         sys_puts("help: Show help message.\n");
         sys_puts("pages: Show free pages.\n");
         sys_puts("ticks: Show timer ticks.\n");
+        sys_puts("hello, count: Run the program.\n");
 
         return;
     }
@@ -69,7 +70,15 @@ static void shell_exec(const char *line) {
         return;
     }
 
-    sys_puts("Unknown command\n");
+    long pid = sys_spawn(line, str_len(line));
+
+    if (pid < 0) {
+        sys_puts("Unknown command\n");
+
+        return;
+    }
+
+    sys_wait(pid);
 }
 
 int main(void) {

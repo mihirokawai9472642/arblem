@@ -1,3 +1,3 @@
 #pragma once
 
-void proc_create(const char *image, unsigned long size);
+int proc_spawn(const char *name);

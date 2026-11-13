@@ -76,6 +76,32 @@ void vm_switch(unsigned long *root) {
     __asm__ volatile ("sfence.vma" : : : "memory");
 }
 
+static void vm_free_table(unsigned long *table, int level) {
+    for (int i = 0; i < 512; i++) {
+        if ((table[i] & PTE_V) == 0) {
+            continue;
+        }
+
+        if (level > 0) {
+            vm_free_table((unsigned long *)PTE_TO_PA(table[i]), level - 1);
+        } else {
+            page_free((void *)PTE_TO_PA(table[i]));
+        }
+    }
+
+    page_free(table);
+}
+
+void vm_free(unsigned long *root) {
+    for (int i = 0; i < 512; i++) {
+        if (root[i] != vm_kernel_root[i]) {
+            vm_free_table((unsigned long *)PTE_TO_PA(root[i]), 1);
+        }
+    }
+
+    page_free(root);
+}
+
 static int vm_check_user(unsigned long addr, unsigned long len, unsigned long perm) {
     unsigned long end = addr + len;
 
