@@ -62,7 +62,7 @@ void trap_handler(struct trap_frame *f) {
     }
 
     if ((status & SSTATUS_SPP) == 0) {
-        thread_exit();
+        thread_exit(-1);
     }
 
     panic("unexpected trap in kernel");

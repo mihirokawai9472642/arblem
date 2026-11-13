@@ -25,8 +25,8 @@ static inline void sys_puts(const char *s) {
     sys_write(s, str_len(s));
 }
 
-static inline void sys_exit(void) {
-    sys_call(SYSCALL_EXIT, 0, 0);
+static inline void sys_exit(int code) {
+    sys_call(SYSCALL_EXIT, code, 0);
 }
 
 static inline long sys_read(char *buf, unsigned long len) {
@@ -53,6 +53,6 @@ static inline long sys_spawn(const char *name, unsigned long len) {
     return sys_call(SYSCALL_SPAWN, (long)name, len);
 }
 
-static inline long sys_wait(long pid) {
-    return sys_call(SYSCALL_WAIT, pid, 0);
+static inline long sys_wait(long pid, int *status) {
+    return sys_call(SYSCALL_WAIT, pid, (long)status);
 }

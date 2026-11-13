@@ -28,7 +28,7 @@ sudo apt install clang lld llvm lldb make qemu-system-riscv
 
 To quit QEMU, press `Ctrl-A` and then `X`.
 
-The shell accepts `help`, `pages` and `ticks`, and runs the user programs `hello` and `count` by name.
+The shell accepts `help`, `pages` and `ticks`, and runs the user programs `hello`, `count`, and `fault` by name.
 
 ## Structure
 

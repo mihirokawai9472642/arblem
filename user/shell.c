@@ -16,6 +16,25 @@ static void shell_puthex(unsigned long x) {
     sys_write(buf, sizeof(buf));
 }
 
+static void shell_putdec(int x) {
+    char buf[12];
+    int i = sizeof(buf);
+    unsigned int u = x < 0 ? -(unsigned int)x : (unsigned int)x;
+
+    buf[--i] = '\n';
+
+    do {
+        buf[--i] = '0' + u % 10;
+        u /= 10;
+    } while (u != 0);
+
+    if (x < 0) {
+        buf[--i] = '-';
+    }
+
+    sys_write(buf + i, sizeof(buf) - i);
+}
+
 static void shell_readline(char *line) {
     int len = 0;
 
@@ -70,7 +89,7 @@ static void shell_exec(const char *line) {
         sys_puts("help: Show help message.\n");
         sys_puts("pages: Show free pages.\n");
         sys_puts("ticks: Show timer ticks.\n");
-        sys_puts("hello, count: Run the program.\n");
+        sys_puts("hello, count, fault: Run the program.\n");
 
         return;
     }
@@ -95,7 +114,12 @@ static void shell_exec(const char *line) {
         return;
     }
 
-    sys_wait(pid);
+    int status;
+
+    if (sys_wait(pid, &status) == 0 && status != 0) {
+        sys_puts("exit: ");
+        shell_putdec(status);
+    }
 }
 
 int main(void) {

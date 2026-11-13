@@ -6,7 +6,7 @@ QEMU    := qemu-system-riscv64
 CFLAGS    := --target=riscv64-unknown-elf -mcmodel=medany -ffreestanding -Wall -Wextra -Iinc -MMD -MP
 QEMUFLAGS := -machine virt -nographic -kernel build/kernel.elf
 
-USER_PROGS := hello count shell
+USER_PROGS := hello count fault shell
 
 FIRMWARE_OBJS := $(patsubst %,build/%.o,$(wildcard firmware/*.S))
 KERNEL_OBJS   := $(patsubst %,build/%.o,$(wildcard kernel/*.S kernel/*.c))

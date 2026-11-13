@@ -63,13 +63,28 @@ static long syscall_spawn(unsigned long name, unsigned long len) {
     return proc_spawn(kname);
 }
 
+static long syscall_wait(unsigned long pid, unsigned long status) {
+    int code;
+    int err = thread_wait(pid, &code);
+
+    if (err < 0) {
+        return err;
+    }
+
+    if (status != 0 && vm_copy_to_user(status, &code, sizeof(code)) != 0) {
+        return -ERR_FAULT;
+    }
+
+    return 0;
+}
+
 long syscall_handle(unsigned long num, unsigned long arg0, unsigned long arg1) {
     if (num == SYSCALL_WRITE) {
         return syscall_write(arg0, arg1);
     }
 
     if (num == SYSCALL_EXIT) {
-        thread_exit();
+        thread_exit(arg0);
     }
 
     if (num == SYSCALL_READ) {
@@ -89,7 +104,7 @@ long syscall_handle(unsigned long num, unsigned long arg0, unsigned long arg1) {
     }
 
     if (num == SYSCALL_WAIT) {
-        return thread_wait(arg0);
+        return syscall_wait(arg0, arg1);
     }
 
     return -ERR_NOSYS;

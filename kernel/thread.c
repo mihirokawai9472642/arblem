@@ -14,10 +14,12 @@ struct thread {
     void *chan;
     unsigned long *vm;
     void *stack;
+    int parent;
+    int exit_code;
 };
 
 static struct thread thread_table[THREAD_MAX];
-static int thread_current;
+static int thread_current = -1;
 static char thread_dead;
 static char thread_exit_wait;
 
@@ -55,6 +57,7 @@ int thread_create(void (*entry)(void), unsigned long *vm) {
     t->chan = 0;
     t->vm = vm;
     t->stack = stack;
+    t->parent = thread_current;
 
     return id;
 }
@@ -65,6 +68,8 @@ void thread_start(void) {
     if (thread_create(thread_idle, 0) < 0) {
         panic("cannot create the idle thread");
     }
+
+    thread_current = 0;
 
     vm_switch(thread_table[0].vm);
     thread_switch(&unused, thread_table[0].sp);
@@ -102,13 +107,21 @@ void thread_wakeup(void *chan) {
     }
 }
 
-void thread_exit(void) {
+void thread_exit(int code) {
+    thread_table[thread_current].exit_code = code;
+
+    for (int i = 0; i < THREAD_MAX; i++) {
+        if (thread_table[i].parent == thread_current) {
+            thread_table[i].parent = -1;
+        }
+    }
+
     thread_wakeup(&thread_exit_wait);
     thread_sleep(&thread_dead);
 }
 
-int thread_wait(int id) {
-    if (id < 0 || id >= THREAD_MAX || thread_table[id].stack == 0) {
+int thread_wait(int id, int *code) {
+    if (id < 0 || id >= THREAD_MAX || thread_table[id].stack == 0 || thread_table[id].parent != thread_current) {
         return -ERR_CHILD;
     }
 
@@ -117,6 +130,8 @@ int thread_wait(int id) {
     while (t->chan != &thread_dead) {
         thread_sleep(&thread_exit_wait);
     }
+
+    *code = t->exit_code;
 
     vm_free(t->vm);
     page_free(t->stack);

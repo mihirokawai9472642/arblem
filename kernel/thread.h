@@ -8,6 +8,6 @@ void thread_start(void);
 void thread_yield(void);
 void thread_sleep(void *chan);
 void thread_wakeup(void *chan);
-void thread_exit(void);
-int thread_wait(int id);
+void thread_exit(int code);
+int thread_wait(int id, int *code);
 #endif

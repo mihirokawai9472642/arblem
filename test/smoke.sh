@@ -53,7 +53,7 @@ qemu=$!
 exec 3> "$INPUT"
 
 wait_for '^> '
-printf 'pages\rhello\rpages\rcount\rpages\rfoo\rpages\rtest-end\r' >&3
+printf 'pages\rhello\rpages\rcount\rpages\rfault\rpages\rfoo\rpages\rtest-end\r' >&3
 wait_for 'test-end'
 
 kill $qemu
@@ -65,9 +65,10 @@ echo "== $NAME"
 check boot    'Hello World from Arblem'
 check hello   'Hello World from U-mode!'
 check count   'count: 4'
+check fault   'exit: -1'
 check unknown 'Unknown command'
 
-if [ "$(grep -c '^0x' "$LOG")" -eq 4 ] && [ "$(grep '^0x' "$LOG" | sort -u | wc -l)" -eq 1 ]; then
+if [ "$(grep -c '^0x' "$LOG")" -eq 5 ] && [ "$(grep '^0x' "$LOG" | sort -u | wc -l)" -eq 1 ]; then
     echo "ok   pages"
 else
     echo "FAIL pages"
