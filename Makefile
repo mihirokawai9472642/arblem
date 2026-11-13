@@ -12,12 +12,12 @@ FIRMWARE_OBJS := $(patsubst %,build/%.o,$(wildcard firmware/*.S))
 KERNEL_OBJS   := $(patsubst %,build/%.o,$(wildcard src/*.S src/*.c))
 LIB_OBJS      := $(patsubst %,build/%.o,$(wildcard lib/*.c))
 USER_OBJS     := $(patsubst %,build/%.o,$(wildcard user/*.c))
+USER_ELFS     := $(patsubst %,build/user/%.elf,$(USER_PROGS))
 USER_BINS     := $(patsubst %,build/user/%.bin,$(USER_PROGS))
 
 MAKEFLAGS += --no-builtin-rules
 
 .PHONY: all run run-opensbi test clean
-.SECONDARY:
 
 all: build/firmware.elf build/kernel.elf
 
@@ -50,7 +50,7 @@ build/kernel.elf: src/linker.ld $(KERNEL_OBJS) $(LIB_OBJS)
 
 build/src/user.S.o: $(USER_BINS)
 
-build/user/%.elf: user/linker.ld build/user/start.c.o build/user/%.c.o $(LIB_OBJS)
+$(USER_ELFS): build/user/%.elf: user/linker.ld build/user/start.c.o build/user/%.c.o $(LIB_OBJS)
 	$(LD) -T user/linker.ld -o $@ $(filter %.o,$^)
 
 build/user/%.bin: build/user/%.elf
