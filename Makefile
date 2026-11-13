@@ -16,7 +16,7 @@ USER_BINS     := $(patsubst %,build/user/%.bin,$(USER_PROGS))
 
 MAKEFLAGS += --no-builtin-rules
 
-.PHONY: all run run-opensbi clean
+.PHONY: all run run-opensbi test clean
 .SECONDARY:
 
 all: build/firmware.elf build/kernel.elf
@@ -26,6 +26,10 @@ run: all
 
 run-opensbi: build/kernel.elf
 	$(QEMU) $(QEMUFLAGS) -bios default
+
+test: all
+	sh test/smoke.sh firmware $(QEMU) $(QEMUFLAGS) -bios build/firmware.elf
+	sh test/smoke.sh opensbi $(QEMU) $(QEMUFLAGS) -bios default
 
 clean:
 	rm -rf build
