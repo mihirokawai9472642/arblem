@@ -1,6 +1,7 @@
 #include "syscall.h"
 #include "page.h"
 #include "proc.h"
+#include "sysnum.h"
 #include "thread.h"
 #include "timer.h"
 #include "uart.h"

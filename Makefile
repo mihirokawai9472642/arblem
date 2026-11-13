@@ -9,7 +9,7 @@ QEMUFLAGS := -machine virt -nographic -kernel build/kernel.elf
 USER_PROGS := hello count shell
 
 FIRMWARE_OBJS := $(patsubst %,build/%.o,$(wildcard firmware/*.S))
-KERNEL_OBJS   := $(patsubst %,build/%.o,$(wildcard src/*.S src/*.c))
+KERNEL_OBJS   := $(patsubst %,build/%.o,$(wildcard kernel/*.S kernel/*.c))
 LIB_OBJS      := $(patsubst %,build/%.o,$(wildcard lib/*.c))
 USER_OBJS     := $(patsubst %,build/%.o,$(wildcard user/*.c))
 USER_ELFS     := $(patsubst %,build/user/%.elf,$(USER_PROGS))
@@ -45,10 +45,10 @@ build/%.S.o: %.S
 build/firmware.elf: firmware/linker.ld $(FIRMWARE_OBJS)
 	$(LD) -T firmware/linker.ld -o $@ $(FIRMWARE_OBJS)
 
-build/kernel.elf: src/linker.ld $(KERNEL_OBJS) $(LIB_OBJS)
-	$(LD) -T src/linker.ld -o $@ $(KERNEL_OBJS) $(LIB_OBJS)
+build/kernel.elf: kernel/linker.ld $(KERNEL_OBJS) $(LIB_OBJS)
+	$(LD) -T kernel/linker.ld -o $@ $(KERNEL_OBJS) $(LIB_OBJS)
 
-build/src/user.S.o: $(USER_BINS)
+build/kernel/user.S.o: $(USER_BINS)
 
 $(USER_ELFS): build/user/%.elf: user/linker.ld build/user/start.c.o build/user/%.c.o $(LIB_OBJS)
 	$(LD) -T user/linker.ld -o $@ $(filter %.o,$^)

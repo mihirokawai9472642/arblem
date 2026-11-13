@@ -1,7 +1,7 @@
 #pragma once
 
 #include "str.h"
-#include "syscall.h"
+#include "sysnum.h"
 
 static inline long sys_call(long num, long arg0, long arg1) {
     register long a0 __asm__("a0") = arg0;
