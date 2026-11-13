@@ -1,9 +1,12 @@
+#include "riscv.h"
+#include "thread.h"
+
 .section .text
 .global thread_switch
 .global thread_entry
 
 thread_switch:
-    addi sp, sp, -112
+    addi sp, sp, -THREAD_FRAME_SIZE
 
     sd ra, 0(sp)
     sd s0, 8(sp)
@@ -36,10 +39,10 @@ thread_switch:
     ld s10, 88(sp)
     ld s11, 96(sp)
 
-    addi sp, sp, 112
+    addi sp, sp, THREAD_FRAME_SIZE
 
     ret
 
 thread_entry:
-    csrsi sstatus, 2
+    csrsi sstatus, SSTATUS_SIE
     jr s0

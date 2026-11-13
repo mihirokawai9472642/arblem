@@ -3,8 +3,7 @@
 #include "panic.h"
 #include "vm.h"
 
-#define THREAD_MAX        8
-#define THREAD_FRAME_SIZE 112
+#define THREAD_MAX 8
 
 void thread_switch(unsigned long *old_sp, unsigned long new_sp);
 void thread_entry(void);

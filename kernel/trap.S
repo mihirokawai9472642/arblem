@@ -1,3 +1,6 @@
+#include "riscv.h"
+#include "trap.h"
+
 .section .text
 .global trap_entry
 .global trap_enter_user
@@ -9,7 +12,7 @@ trap_entry:
     csrr sp, sscratch
 
 1:
-    addi sp, sp, -144
+    addi sp, sp, -TRAP_FRAME_SIZE
 
     sd ra, 0(sp)
     sd t0, 8(sp)
@@ -35,10 +38,10 @@ trap_entry:
     call trap_handler
 
     csrr t0, sstatus
-    andi t0, t0, 0x100
+    andi t0, t0, SSTATUS_SPP
     bnez t0, 2f
 
-    addi t0, sp, 144
+    addi t0, sp, TRAP_FRAME_SIZE
     csrw sscratch, t0
 
 2:
@@ -63,9 +66,9 @@ trap_entry:
     sret
 
 trap_enter_user:
-    csrci sstatus, 2
+    csrci sstatus, SSTATUS_SIE
 
-    li t0, 0x100
+    li t0, SSTATUS_SPP
     csrc sstatus, t0
     csrw sepc, a0
 
