@@ -53,7 +53,7 @@ void trap_handler(struct trap_frame *f) {
     kprintf("sepc: %x\n", epc);
     kprintf("stval: %x\n", tval);
 
-    if (cause == SCAUSE_BREAKPOINT) {
+    if (cause == SCAUSE_BREAKPOINT && (status & SSTATUS_SPP)) {
         unsigned short insn = *(volatile unsigned short *)epc;
         epc += ((insn & 3) == 3) ? 4 : 2;
         csr_write(sepc, epc);
