@@ -6,6 +6,10 @@
 #define ELF_MACHINE_RISCV 243
 #define ELF_PT_LOAD       1
 
+#define ELF_PF_X 1
+#define ELF_PF_W 2
+#define ELF_PF_R 4
+
 struct elf_header {
     unsigned char ident[16];
     unsigned short type;

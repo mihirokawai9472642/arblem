@@ -48,6 +48,24 @@ static char *proc_map_page(unsigned long *vm, unsigned long va, unsigned long pe
     return page;
 }
 
+static unsigned long proc_perm(unsigned int flags) {
+    unsigned long perm = PTE_U;
+
+    if (flags & (ELF_PF_R | ELF_PF_W)) {
+        perm |= PTE_R;
+    }
+
+    if (flags & ELF_PF_W) {
+        perm |= PTE_W;
+    }
+
+    if (flags & ELF_PF_X) {
+        perm |= PTE_X;
+    }
+
+    return perm;
+}
+
 static int proc_load(unsigned long *vm, const char *image, const struct elf_phdr *ph, unsigned long *next) {
     unsigned long end = PROC_STACK_TOP - PAGE_SIZE;
 
@@ -55,8 +73,12 @@ static int proc_load(unsigned long *vm, const char *image, const struct elf_phdr
         return -ERR_NOEXEC;
     }
 
+    if ((ph->flags & ELF_PF_W) && (ph->flags & ELF_PF_X)) {
+        return -ERR_NOEXEC;
+    }
+
     for (unsigned long off = 0; off < ph->memsz; off += PAGE_SIZE) {
-        char *page = proc_map_page(vm, ph->vaddr + off, PTE_R | PTE_W | PTE_X | PTE_U);
+        char *page = proc_map_page(vm, ph->vaddr + off, proc_perm(ph->flags));
 
         if (page == 0) {
             return -ERR_NOMEM;
