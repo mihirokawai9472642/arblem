@@ -8,10 +8,14 @@
 void thread_switch(unsigned long *old_sp, unsigned long new_sp);
 void thread_entry(void);
 
-static unsigned long thread_sp[THREAD_MAX];
-static void *thread_chan[THREAD_MAX];
-static unsigned long *thread_vm[THREAD_MAX];
-static void *thread_stack[THREAD_MAX];
+struct thread {
+    unsigned long sp;
+    void *chan;
+    unsigned long *vm;
+    void *stack;
+};
+
+static struct thread thread_table[THREAD_MAX];
 static int thread_current;
 static char thread_dead;
 static char thread_exit_wait;
@@ -25,7 +29,7 @@ static void thread_idle(void) {
 int thread_create(void (*entry)(void), unsigned long *vm) {
     int id = 0;
 
-    while (id < THREAD_MAX && thread_stack[id] != 0) {
+    while (id < THREAD_MAX && thread_table[id].stack != 0) {
         id++;
     }
 
@@ -39,10 +43,12 @@ int thread_create(void (*entry)(void), unsigned long *vm) {
     frame[0] = (unsigned long)thread_entry;
     frame[1] = (unsigned long)entry;
 
-    thread_sp[id] = (unsigned long)frame;
-    thread_chan[id] = 0;
-    thread_vm[id] = vm;
-    thread_stack[id] = stack;
+    struct thread *t = &thread_table[id];
+
+    t->sp = (unsigned long)frame;
+    t->chan = 0;
+    t->vm = vm;
+    t->stack = stack;
 
     return id;
 }
@@ -52,8 +58,8 @@ void thread_start(void) {
 
     thread_create(thread_idle, 0);
 
-    vm_switch(thread_vm[0]);
-    thread_switch(&unused, thread_sp[0]);
+    vm_switch(thread_table[0].vm);
+    thread_switch(&unused, thread_table[0].sp);
 }
 
 void thread_yield(void) {
@@ -65,25 +71,25 @@ void thread_yield(void) {
         if (thread_current == THREAD_MAX) {
             thread_current = 0;
         }
-    } while (thread_stack[thread_current] == 0 || thread_chan[thread_current] != 0);
+    } while (thread_table[thread_current].stack == 0 || thread_table[thread_current].chan != 0);
 
     if (thread_current == prev) {
         return;
     }
 
-    vm_switch(thread_vm[thread_current]);
-    thread_switch(&thread_sp[prev], thread_sp[thread_current]);
+    vm_switch(thread_table[thread_current].vm);
+    thread_switch(&thread_table[prev].sp, thread_table[thread_current].sp);
 }
 
 void thread_sleep(void *chan) {
-    thread_chan[thread_current] = chan;
+    thread_table[thread_current].chan = chan;
     thread_yield();
 }
 
 void thread_wakeup(void *chan) {
     for (int i = 0; i < THREAD_MAX; i++) {
-        if (thread_chan[i] == chan) {
-            thread_chan[i] = 0;
+        if (thread_table[i].chan == chan) {
+            thread_table[i].chan = 0;
         }
     }
 }
@@ -94,17 +100,19 @@ void thread_exit(void) {
 }
 
 int thread_wait(int id) {
-    if (id < 0 || id >= THREAD_MAX || thread_stack[id] == 0) {
+    if (id < 0 || id >= THREAD_MAX || thread_table[id].stack == 0) {
         return -1;
     }
 
-    while (thread_chan[id] != &thread_dead) {
+    struct thread *t = &thread_table[id];
+
+    while (t->chan != &thread_dead) {
         thread_sleep(&thread_exit_wait);
     }
 
-    vm_free(thread_vm[id]);
-    page_free(thread_stack[id]);
-    thread_stack[id] = 0;
+    vm_free(t->vm);
+    page_free(t->stack);
+    t->stack = 0;
 
     return 0;
 }
