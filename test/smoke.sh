@@ -11,14 +11,22 @@ TIMEOUT=20
 
 failed=0
 
+fail() {
+    echo "FAIL $NAME: $1 (see $LOG)"
+    kill $qemu 2>/dev/null
+    exit 1
+}
+
 wait_for() {
     elapsed=0
 
     while ! grep -q "$1" "$LOG"; do
+        if grep -q 'panic: ' "$LOG"; then
+            fail "kernel panic"
+        fi
+
         if [ $elapsed -ge $((TIMEOUT * 10)) ] || ! kill -0 $qemu 2>/dev/null; then
-            echo "FAIL $NAME: '$1' did not appear within $TIMEOUT seconds (see $LOG)"
-            kill $qemu 2>/dev/null
-            exit 1
+            fail "'$1' did not appear within $TIMEOUT seconds"
         fi
 
         sleep 0.1
