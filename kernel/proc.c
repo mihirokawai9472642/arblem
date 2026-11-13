@@ -1,4 +1,5 @@
 #include "proc.h"
+#include "error.h"
 #include "page.h"
 #include "riscv.h"
 #include "str.h"
@@ -48,8 +49,10 @@ static int proc_create(const char *image, unsigned long size) {
     unsigned long *vm = vm_create();
 
     if (vm == 0) {
-        return -1;
+        return -ERR_NOMEM;
     }
+
+    int err = -ERR_NOMEM;
 
     for (unsigned long off = 0; off < size; off += PAGE_SIZE) {
         char *page = proc_map_page(vm, PROC_BASE + off, PTE_R | PTE_W | PTE_X | PTE_U);
@@ -70,6 +73,7 @@ static int proc_create(const char *image, unsigned long size) {
     int id = thread_create(proc_entry, vm);
 
     if (id < 0) {
+        err = id;
         goto fail;
     }
 
@@ -78,7 +82,7 @@ static int proc_create(const char *image, unsigned long size) {
 fail:
     vm_free(vm);
 
-    return -1;
+    return err;
 }
 
 int proc_spawn(const char *name) {
@@ -88,5 +92,5 @@ int proc_spawn(const char *name) {
         }
     }
 
-    return -1;
+    return -ERR_NOENT;
 }

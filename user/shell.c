@@ -1,3 +1,4 @@
+#include "error.h"
 #include "str.h"
 #include "sys.h"
 
@@ -44,6 +45,22 @@ static void shell_readline(char *line) {
     }
 }
 
+static const char *shell_strerror(long err) {
+    if (err == -ERR_NOENT) {
+        return "Unknown command\n";
+    }
+
+    if (err == -ERR_NOMEM) {
+        return "Out of memory\n";
+    }
+
+    if (err == -ERR_AGAIN) {
+        return "Too many processes\n";
+    }
+
+    return "Error\n";
+}
+
 static void shell_exec(const char *line) {
     if (str_equal(line, "")) {
         return;
@@ -73,7 +90,7 @@ static void shell_exec(const char *line) {
     long pid = sys_spawn(line, str_len(line));
 
     if (pid < 0) {
-        sys_puts("Unknown command\n");
+        sys_puts(shell_strerror(pid));
 
         return;
     }

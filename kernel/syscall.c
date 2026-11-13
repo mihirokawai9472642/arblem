@@ -1,4 +1,5 @@
 #include "syscall.h"
+#include "error.h"
 #include "page.h"
 #include "proc.h"
 #include "sysnum.h"
@@ -10,7 +11,7 @@
 #define SYSCALL_BUF_SIZE 64
 #define SYSCALL_NAME_MAX 16
 
-static unsigned long syscall_write(unsigned long buf, unsigned long len) {
+static long syscall_write(unsigned long buf, unsigned long len) {
     char kbuf[SYSCALL_BUF_SIZE];
 
     for (unsigned long done = 0; done < len; done += SYSCALL_BUF_SIZE) {
@@ -21,7 +22,7 @@ static unsigned long syscall_write(unsigned long buf, unsigned long len) {
         }
 
         if (vm_copy_from_user(kbuf, buf + done, n) != 0) {
-            return -1;
+            return -ERR_FAULT;
         }
 
         for (unsigned long i = 0; i < n; i++) {
@@ -32,7 +33,7 @@ static unsigned long syscall_write(unsigned long buf, unsigned long len) {
     return len;
 }
 
-static unsigned long syscall_read(unsigned long buf, unsigned long len) {
+static long syscall_read(unsigned long buf, unsigned long len) {
     if (len == 0) {
         return 0;
     }
@@ -40,17 +41,21 @@ static unsigned long syscall_read(unsigned long buf, unsigned long len) {
     char c = uart_getc();
 
     if (vm_copy_to_user(buf, &c, 1) != 0) {
-        return -1;
+        return -ERR_FAULT;
     }
 
     return 1;
 }
 
-static unsigned long syscall_spawn(unsigned long name, unsigned long len) {
+static long syscall_spawn(unsigned long name, unsigned long len) {
     char kname[SYSCALL_NAME_MAX];
 
-    if (len >= SYSCALL_NAME_MAX || vm_copy_from_user(kname, name, len) != 0) {
-        return -1;
+    if (len >= SYSCALL_NAME_MAX) {
+        return -ERR_NOENT;
+    }
+
+    if (vm_copy_from_user(kname, name, len) != 0) {
+        return -ERR_FAULT;
     }
 
     kname[len] = '\0';
@@ -58,7 +63,7 @@ static unsigned long syscall_spawn(unsigned long name, unsigned long len) {
     return proc_spawn(kname);
 }
 
-unsigned long syscall_handle(unsigned long num, unsigned long arg0, unsigned long arg1) {
+long syscall_handle(unsigned long num, unsigned long arg0, unsigned long arg1) {
     if (num == SYSCALL_WRITE) {
         return syscall_write(arg0, arg1);
     }
@@ -87,5 +92,5 @@ unsigned long syscall_handle(unsigned long num, unsigned long arg0, unsigned lon
         return thread_wait(arg0);
     }
 
-    return -1;
+    return -ERR_NOSYS;
 }

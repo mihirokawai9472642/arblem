@@ -1,4 +1,5 @@
 #include "thread.h"
+#include "error.h"
 #include "page.h"
 #include "panic.h"
 #include "vm.h"
@@ -34,13 +35,13 @@ int thread_create(void (*entry)(void), unsigned long *vm) {
     }
 
     if (id == THREAD_MAX) {
-        return -1;
+        return -ERR_AGAIN;
     }
 
     unsigned char *stack = page_alloc();
 
     if (stack == 0) {
-        return -1;
+        return -ERR_NOMEM;
     }
 
     unsigned long *frame = (unsigned long *)(stack + PAGE_SIZE - THREAD_FRAME_SIZE);
@@ -108,7 +109,7 @@ void thread_exit(void) {
 
 int thread_wait(int id) {
     if (id < 0 || id >= THREAD_MAX || thread_table[id].stack == 0) {
-        return -1;
+        return -ERR_CHILD;
     }
 
     struct thread *t = &thread_table[id];
