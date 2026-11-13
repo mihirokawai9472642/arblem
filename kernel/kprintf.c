@@ -1,6 +1,12 @@
 #include "kprintf.h"
 #include "uart.h"
 
+static void putstr(const char *s) {
+    for (; *s; s++) {
+        uart_putc(*s);
+    }
+}
+
 static void puthex(unsigned long x) {
     uart_putc('0');
     uart_putc('x');
@@ -17,6 +23,9 @@ void kprintf(const char *f, ...) {
     for (; *f; f++) {
         if (*f == '%' && *(f + 1) == 'x') {
             puthex(__builtin_va_arg(ap, unsigned long));
+            f++;
+        } else if (*f == '%' && *(f + 1) == 's') {
+            putstr(__builtin_va_arg(ap, const char *));
             f++;
         } else {
             uart_putc(*f);

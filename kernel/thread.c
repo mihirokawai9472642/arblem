@@ -1,5 +1,6 @@
 #include "thread.h"
 #include "page.h"
+#include "panic.h"
 #include "vm.h"
 
 #define THREAD_MAX        8
@@ -38,6 +39,11 @@ int thread_create(void (*entry)(void), unsigned long *vm) {
     }
 
     unsigned char *stack = page_alloc();
+
+    if (stack == 0) {
+        return -1;
+    }
+
     unsigned long *frame = (unsigned long *)(stack + PAGE_SIZE - THREAD_FRAME_SIZE);
 
     frame[0] = (unsigned long)thread_entry;
@@ -56,7 +62,9 @@ int thread_create(void (*entry)(void), unsigned long *vm) {
 void thread_start(void) {
     unsigned long unused;
 
-    thread_create(thread_idle, 0);
+    if (thread_create(thread_idle, 0) < 0) {
+        panic("cannot create the idle thread");
+    }
 
     vm_switch(thread_table[0].vm);
     thread_switch(&unused, thread_table[0].sp);

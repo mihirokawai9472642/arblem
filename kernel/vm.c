@@ -1,5 +1,6 @@
 #include "vm.h"
 #include "page.h"
+#include "panic.h"
 #include "riscv.h"
 #include "virt.h"
 
@@ -25,7 +26,13 @@ static unsigned long *vm_walk(unsigned long *root, unsigned long va, int alloc) 
                 return 0;
             }
 
-            *pte = PTE_FROM_PA(page_alloc()) | PTE_V;
+            void *page = page_alloc();
+
+            if (page == 0) {
+                return 0;
+            }
+
+            *pte = PTE_FROM_PA(page) | PTE_V;
         }
 
         table = (unsigned long *)PTE_TO_PA(*pte);
@@ -34,18 +41,32 @@ static unsigned long *vm_walk(unsigned long *root, unsigned long va, int alloc) 
     return &table[(va >> 12) & 0x1ff];
 }
 
-void vm_map(unsigned long *root, unsigned long va, unsigned long pa, unsigned long size, unsigned long perm) {
+int vm_map(unsigned long *root, unsigned long va, unsigned long pa, unsigned long size, unsigned long perm) {
     for (unsigned long off = 0; off < size; off += PAGE_SIZE) {
-        *vm_walk(root, va + off, 1) = PTE_FROM_PA(pa + off) | perm | PTE_A | PTE_D | PTE_V;
+        unsigned long *pte = vm_walk(root, va + off, 1);
+
+        if (pte == 0) {
+            return -1;
+        }
+
+        *pte = PTE_FROM_PA(pa + off) | perm | PTE_A | PTE_D | PTE_V;
     }
+
+    return 0;
 }
 
 static void vm_map_identity(unsigned long start, unsigned long end, unsigned long perm) {
-    vm_map(vm_kernel_root, start, start, end - start, perm);
+    if (vm_map(vm_kernel_root, start, start, end - start, perm) != 0) {
+        panic("out of memory while mapping the kernel");
+    }
 }
 
 void vm_init(unsigned long ram_end) {
     vm_kernel_root = page_alloc();
+
+    if (vm_kernel_root == 0) {
+        panic("out of memory while mapping the kernel");
+    }
 
     vm_map_identity(VIRT_PLIC, VIRT_PLIC + VIRT_PLIC_SIZE, PTE_R | PTE_W);
     vm_map_identity(VIRT_UART0, VIRT_UART0 + VIRT_UART0_SIZE, PTE_R | PTE_W);
@@ -57,6 +78,10 @@ void vm_init(unsigned long ram_end) {
 
 unsigned long *vm_create(void) {
     unsigned long *root = page_alloc();
+
+    if (root == 0) {
+        return 0;
+    }
 
     for (int i = 0; i < 512; i++) {
         root[i] = vm_kernel_root[i];

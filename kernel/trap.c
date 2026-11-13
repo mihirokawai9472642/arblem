@@ -1,4 +1,5 @@
 #include "kprintf.h"
+#include "panic.h"
 #include "plic.h"
 #include "riscv.h"
 #include "syscall.h"
@@ -64,7 +65,5 @@ void trap_handler(struct trap_frame *f) {
         thread_exit();
     }
 
-    for (;;) {
-        __asm__ volatile ("wfi");
-    }
+    panic("unexpected trap in kernel");
 }

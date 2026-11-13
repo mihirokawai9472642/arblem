@@ -29,30 +29,56 @@ static void proc_entry(void) {
     trap_enter_user(PROC_BASE, PROC_STACK_TOP);
 }
 
+static char *proc_map_page(unsigned long *vm, unsigned long va, unsigned long perm) {
+    char *page = page_alloc();
+
+    if (page == 0) {
+        return 0;
+    }
+
+    if (vm_map(vm, va, (unsigned long)page, PAGE_SIZE, perm) != 0) {
+        page_free(page);
+        return 0;
+    }
+
+    return page;
+}
+
 static int proc_create(const char *image, unsigned long size) {
     unsigned long *vm = vm_create();
 
+    if (vm == 0) {
+        return -1;
+    }
+
     for (unsigned long off = 0; off < size; off += PAGE_SIZE) {
-        char *page = page_alloc();
+        char *page = proc_map_page(vm, PROC_BASE + off, PTE_R | PTE_W | PTE_X | PTE_U);
+
+        if (page == 0) {
+            goto fail;
+        }
 
         for (unsigned long i = 0; i < PAGE_SIZE && off + i < size; i++) {
             page[i] = image[off + i];
         }
-
-        vm_map(vm, PROC_BASE + off, (unsigned long)page, PAGE_SIZE, PTE_R | PTE_W | PTE_X | PTE_U);
     }
 
-    unsigned long stack = (unsigned long)page_alloc();
-
-    vm_map(vm, PROC_STACK_TOP - PAGE_SIZE, stack, PAGE_SIZE, PTE_R | PTE_W | PTE_U);
+    if (proc_map_page(vm, PROC_STACK_TOP - PAGE_SIZE, PTE_R | PTE_W | PTE_U) == 0) {
+        goto fail;
+    }
 
     int id = thread_create(proc_entry, vm);
 
     if (id < 0) {
-        vm_free(vm);
+        goto fail;
     }
 
     return id;
+
+fail:
+    vm_free(vm);
+
+    return -1;
 }
 
 int proc_spawn(const char *name) {

@@ -1,5 +1,6 @@
 #include "kprintf.h"
 #include "page.h"
+#include "panic.h"
 #include "plic.h"
 #include "proc.h"
 #include "thread.h"
@@ -24,6 +25,9 @@ void kernel_main(unsigned long hartid, unsigned long dtb) {
     plic_enable(VIRT_UART0_IRQ);
     timer_init();
 
-    proc_spawn("shell");
+    if (proc_spawn("shell") < 0) {
+        panic("cannot start the shell");
+    }
+
     thread_start();
 }
