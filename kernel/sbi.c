@@ -1,5 +1,14 @@
 #include "sbi.h"
-#include "sbinum.h"
+
+#define SBI_SUCCESS 0
+#define SBI_EXT_BASE 0x10
+#define SBI_EXT_SRST 0x53525354
+#define SBI_EXT_DBCN 0x4442434e
+
+#define SBI_BASE_GET_SPEC_VERSION 0
+#define SBI_SRST_SYSTEM_RESET     0
+#define SBI_SRST_TYPE_SHUTDOWN    0
+#define SBI_DBCN_WRITE            0
 
 struct sbi_ret {
     long error;

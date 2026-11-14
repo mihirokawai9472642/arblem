@@ -36,20 +36,6 @@
 #define IRQ_S_TIMER 5
 #define IRQ_S_EXT   9
 
-#define MSTATUS_MPP   (3UL << 11)
-#define MSTATUS_MPP_S (1UL << 11)
-
-#define MCOUNTEREN_TM (1UL << 1)
-
-#define MENVCFG_STCE (1UL << 63)
-
-#define PMP_R     (1UL << 0)
-#define PMP_W     (1UL << 1)
-#define PMP_X     (1UL << 2)
-#define PMP_NAPOT (3UL << 3)
-
-#define PMP_NAPOT_ADDR(base, size) (((base) >> 2) | (((size) >> 3) - 1))
-
 #define SSTATUS_SIE (1UL << 1)
 #define SSTATUS_SPP (1UL << 8)
 #define SSTATUS_SUM (1UL << 18)

@@ -2,7 +2,6 @@
 #include "kprintf.h"
 #include "riscv.h"
 #include "sbi.h"
-#include "sbinum.h"
 
 void panic(const char *msg) {
     csr_clear(sstatus, SSTATUS_SIE);

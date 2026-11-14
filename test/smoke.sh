@@ -2,17 +2,14 @@
 
 set -u
 
-NAME=$1
-shift
-
-LOG=build/test-$NAME.log
-INPUT=build/test-$NAME.in
+LOG=build/test.log
+INPUT=build/test.in
 TIMEOUT=20
 
 failed=0
 
 fail() {
-    echo "FAIL $NAME: $1 (see $LOG)"
+    echo "FAIL $1 (see $LOG)"
     kill $qemu 2>/dev/null
     exit 1
 }
@@ -76,8 +73,6 @@ exec 3>&-
 if grep -q 'panic: ' "$LOG"; then
     fail "kernel panic"
 fi
-
-echo "== $NAME"
 
 check boot    'Hello World from Arblem'
 check hello   'Hello World from U-mode!'

@@ -3,7 +3,6 @@
 #include "page.h"
 #include "proc.h"
 #include "sbi.h"
-#include "sbinum.h"
 #include "sysnum.h"
 #include "thread.h"
 #include "timer.h"
