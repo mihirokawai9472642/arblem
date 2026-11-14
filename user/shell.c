@@ -13,7 +13,7 @@ static void shell_puthex(unsigned long x) {
 
     buf[18] = '\n';
 
-    sys_write(buf, sizeof(buf));
+    sys_write(FD_STDOUT, buf, sizeof(buf));
 }
 
 static void shell_putdec(int x) {
@@ -32,7 +32,7 @@ static void shell_putdec(int x) {
         buf[--i] = '-';
     }
 
-    sys_write(buf + i, sizeof(buf) - i);
+    sys_write(FD_STDOUT, buf + i, sizeof(buf) - i);
 }
 
 static void shell_readline(char *line) {

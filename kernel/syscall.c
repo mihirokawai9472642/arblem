@@ -1,51 +1,34 @@
 #include "syscall.h"
 #include "error.h"
+#include "file.h"
 #include "page.h"
 #include "proc.h"
 #include "sbi.h"
 #include "sysnum.h"
 #include "thread.h"
 #include "timer.h"
-#include "uart.h"
 #include "vm.h"
 
-#define SYSCALL_BUF_SIZE 64
 #define SYSCALL_NAME_MAX 16
 
-static long syscall_write(unsigned long buf, unsigned long len) {
-    char kbuf[SYSCALL_BUF_SIZE];
+static long syscall_write(unsigned long fd, unsigned long buf, unsigned long len) {
+    struct file *f = thread_file(fd);
 
-    for (unsigned long done = 0; done < len; done += SYSCALL_BUF_SIZE) {
-        unsigned long n = len - done;
-
-        if (n > SYSCALL_BUF_SIZE) {
-            n = SYSCALL_BUF_SIZE;
-        }
-
-        if (vm_copy_from_user(kbuf, buf + done, n) != 0) {
-            return -ERR_FAULT;
-        }
-
-        for (unsigned long i = 0; i < n; i++) {
-            uart_putc(kbuf[i]);
-        }
+    if (f == 0 || f->write == 0) {
+        return -ERR_BADF;
     }
 
-    return len;
+    return f->write(f, buf, len);
 }
 
-static long syscall_read(unsigned long buf, unsigned long len) {
-    if (len == 0) {
-        return 0;
+static long syscall_read(unsigned long fd, unsigned long buf, unsigned long len) {
+    struct file *f = thread_file(fd);
+
+    if (f == 0 || f->read == 0) {
+        return -ERR_BADF;
     }
 
-    char c = uart_getc();
-
-    if (vm_copy_to_user(buf, &c, 1) != 0) {
-        return -ERR_FAULT;
-    }
-
-    return 1;
+    return f->read(f, buf, len);
 }
 
 static long syscall_spawn(unsigned long name, unsigned long len) {
@@ -79,9 +62,9 @@ static long syscall_wait(unsigned long pid, unsigned long status) {
     return 0;
 }
 
-long syscall_handle(unsigned long num, unsigned long arg0, unsigned long arg1) {
+long syscall_handle(unsigned long num, unsigned long arg0, unsigned long arg1, unsigned long arg2) {
     if (num == SYSCALL_WRITE) {
-        return syscall_write(arg0, arg1);
+        return syscall_write(arg0, arg1, arg2);
     }
 
     if (num == SYSCALL_EXIT) {
@@ -89,7 +72,7 @@ long syscall_handle(unsigned long num, unsigned long arg0, unsigned long arg1) {
     }
 
     if (num == SYSCALL_READ) {
-        return syscall_read(arg0, arg1);
+        return syscall_read(arg0, arg1, arg2);
     }
 
     if (num == SYSCALL_TICKS) {

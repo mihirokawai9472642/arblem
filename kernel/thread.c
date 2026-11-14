@@ -16,6 +16,7 @@ struct thread {
     void *stack;
     int parent;
     int exit_code;
+    struct file *files[THREAD_FILE_MAX];
 };
 
 static struct thread thread_table[THREAD_MAX];
@@ -61,6 +62,10 @@ int thread_create(void (*entry)(unsigned long), unsigned long arg, unsigned long
     t->vm = vm;
     t->stack = stack;
     t->parent = thread_current;
+
+    for (int fd = 0; fd < THREAD_FILE_MAX; fd++) {
+        t->files[fd] = thread_current >= 0 ? thread_table[thread_current].files[fd] : 0;
+    }
 
     return id;
 }
@@ -141,4 +146,16 @@ int thread_wait(int id, int *code) {
     t->stack = 0;
 
     return 0;
+}
+
+struct file *thread_file(unsigned long fd) {
+    if (fd >= THREAD_FILE_MAX) {
+        return 0;
+    }
+
+    return thread_table[thread_current].files[fd];
+}
+
+void thread_set_file(int id, unsigned long fd, struct file *f) {
+    thread_table[id].files[fd] = f;
 }

@@ -1,3 +1,5 @@
+#include "console.h"
+#include "fd.h"
 #include "kprintf.h"
 #include "page.h"
 #include "panic.h"
@@ -27,9 +29,15 @@ void kernel_main(unsigned long hartid, unsigned long dtb) {
     plic_enable(VIRT_UART0_IRQ);
     timer_init();
 
-    if (proc_spawn("shell") < 0) {
+    int shell = proc_spawn("shell");
+
+    if (shell < 0) {
         panic("cannot start the shell");
     }
+
+    thread_set_file(shell, FD_STDIN, console_file());
+    thread_set_file(shell, FD_STDOUT, console_file());
+    thread_set_file(shell, FD_STDERR, console_file());
 
     thread_start();
 }
