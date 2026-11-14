@@ -1,6 +1,5 @@
 #include "kprintf.h"
 #include "sbi.h"
-#include "uart.h"
 
 #define KPRINTF_BUF_SIZE 64
 
@@ -10,11 +9,7 @@ struct kprintf_buf {
 };
 
 static void kprintf_flush(struct kprintf_buf *b) {
-    if (sbi_console_write(b->data, b->len) != 0) {
-        for (unsigned long i = 0; i < b->len; i++) {
-            uart_putc(b->data[i]);
-        }
-    }
+    sbi_console_write(b->data, b->len);
 
     b->len = 0;
 }
