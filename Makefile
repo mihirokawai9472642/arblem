@@ -7,7 +7,7 @@ QEMUFLAGS := -machine virt -nographic -kernel build/kernel.elf
 
 USER_PROGS := hello count fault shell
 
-FIRMWARE_OBJS := $(patsubst %,build/%.o,$(wildcard firmware/*.S))
+FIRMWARE_OBJS := $(patsubst %,build/%.o,$(wildcard firmware/*.S firmware/*.c))
 KERNEL_OBJS   := $(patsubst %,build/%.o,$(wildcard kernel/*.S kernel/*.c))
 LIB_OBJS      := $(patsubst %,build/%.o,$(wildcard lib/*.c))
 USER_OBJS     := $(patsubst %,build/%.o,$(wildcard user/*.c))

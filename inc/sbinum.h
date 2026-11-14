@@ -1,0 +1,18 @@
+#pragma once
+
+#define SBI_SUCCESS           0
+#define SBI_ERR_NOT_SUPPORTED -2
+#define SBI_ERR_INVALID_PARAM -3
+
+#define SBI_EXT_BASE 0x10
+#define SBI_EXT_SRST 0x53525354
+
+#define SBI_BASE_GET_SPEC_VERSION 0
+
+#define SBI_SRST_SYSTEM_RESET 0
+
+#define SBI_SRST_TYPE_SHUTDOWN    0
+#define SBI_SRST_TYPE_WARM_REBOOT 2
+
+#define SBI_SRST_REASON_NONE    0
+#define SBI_SRST_REASON_FAILURE 1

@@ -3,6 +3,7 @@
 #include "panic.h"
 #include "plic.h"
 #include "proc.h"
+#include "sbi.h"
 #include "thread.h"
 #include "timer.h"
 #include "uart.h"
@@ -16,6 +17,7 @@ void kernel_main(unsigned long hartid, unsigned long dtb) {
 
     kprintf("HartID: %x\n", hartid);
     kprintf("DTB: %x\n", dtb);
+    kprintf("SBI: %x\n", sbi_spec_version());
 
     page_init((unsigned long)__kernel_end, dtb);
     vm_init(dtb);
