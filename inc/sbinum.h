@@ -6,6 +6,7 @@
 
 #define SBI_EXT_BASE 0x10
 #define SBI_EXT_SRST 0x53525354
+#define SBI_EXT_DBCN 0x4442434e
 
 #define SBI_BASE_GET_SPEC_VERSION 0
 
@@ -16,3 +17,6 @@
 
 #define SBI_SRST_REASON_NONE    0
 #define SBI_SRST_REASON_FAILURE 1
+
+#define SBI_DBCN_WRITE      0
+#define SBI_DBCN_WRITE_BYTE 2

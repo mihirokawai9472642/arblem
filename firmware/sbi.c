@@ -1,3 +1,4 @@
+#include "firmware.h"
 #include "riscv.h"
 #include "sbinum.h"
 #include "virt.h"
@@ -47,6 +48,36 @@ static long sbi_srst(unsigned long fid, unsigned long type, unsigned long reason
     sbi_halt();
 }
 
+static void sbi_putc(char c) {
+    *(volatile unsigned char *)VIRT_UART0 = c;
+}
+
+static long sbi_dbcn(unsigned long fid, unsigned long arg0, unsigned long arg1, unsigned long arg2, unsigned long *value) {
+    if (fid == SBI_DBCN_WRITE_BYTE) {
+        sbi_putc(arg0);
+        return SBI_SUCCESS;
+    }
+
+    if (fid != SBI_DBCN_WRITE) {
+        return SBI_ERR_NOT_SUPPORTED;
+    }
+
+    unsigned long len = arg0;
+    unsigned long addr = arg1;
+
+    if (arg2 != 0 || addr < KERNEL_BASE || addr + len < addr) {
+        return SBI_ERR_INVALID_PARAM;
+    }
+
+    for (unsigned long i = 0; i < len; i++) {
+        sbi_putc(((const char *)addr)[i]);
+    }
+
+    *value = len;
+
+    return SBI_SUCCESS;
+}
+
 void sbi_handler(struct sbi_frame *f) {
     if (csr_read(mcause) != EXC_SUPERVISOR_ECALL) {
         sbi_halt();
@@ -59,6 +90,8 @@ void sbi_handler(struct sbi_frame *f) {
         error = sbi_base(f->a6, &value);
     } else if (f->a7 == SBI_EXT_SRST) {
         error = sbi_srst(f->a6, f->a0, f->a1);
+    } else if (f->a7 == SBI_EXT_DBCN) {
+        error = sbi_dbcn(f->a6, f->a0, f->a1, f->a2, &value);
     } else {
         error = SBI_ERR_NOT_SUPPORTED;
     }

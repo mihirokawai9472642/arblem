@@ -1,8 +1,5 @@
+#include "firmware.h"
 #include "riscv.h"
-
-#define FIRMWARE_BASE 0x80000000
-#define FIRMWARE_SIZE 0x200000
-#define KERNEL_BASE   (FIRMWARE_BASE + FIRMWARE_SIZE)
 
 #define FIRMWARE_MEDELEG ((1 << EXC_INSN_MISALIGNED) | (1 << EXC_INSN_ACCESS) | \
                           (1 << EXC_ILLEGAL_INSN) | (1 << EXC_BREAKPOINT) | \
