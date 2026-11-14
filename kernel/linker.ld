@@ -8,8 +8,18 @@ SECTIONS {
         *(.text .text.*)
     }
 
+    . = ALIGN(4096);
+    __text_end = .;
+
     .rodata : {
-        *(.rodata .rodata.*)
+        *(.rodata .rodata.* .srodata .srodata.*)
+    }
+
+    . = ALIGN(4096);
+    __rodata_end = .;
+
+    .data : {
+        *(.data .data.* .sdata .sdata.*)
     }
 
     .bss : {

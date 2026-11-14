@@ -10,7 +10,8 @@
 #define VM_VA_END (1UL << 38)
 
 extern char __kernel_start[];
-extern char __kernel_end[];
+extern char __text_end[];
+extern char __rodata_end[];
 
 static unsigned long *vm_kernel_root;
 static unsigned long *vm_current_root;
@@ -56,6 +57,10 @@ int vm_map(unsigned long *root, unsigned long va, unsigned long pa, unsigned lon
 }
 
 static void vm_map_identity(unsigned long start, unsigned long end, unsigned long perm) {
+    if (start % PAGE_SIZE != 0 || end % PAGE_SIZE != 0) {
+        panic("unaligned kernel mapping");
+    }
+
     if (vm_map(vm_kernel_root, start, start, end - start, perm) != 0) {
         panic("out of memory while mapping the kernel");
     }
@@ -70,8 +75,9 @@ void vm_init(unsigned long ram_end) {
 
     vm_map_identity(VIRT_PLIC, VIRT_PLIC + VIRT_PLIC_SIZE, PTE_R | PTE_W);
     vm_map_identity(VIRT_UART0, VIRT_UART0 + VIRT_UART0_SIZE, PTE_R | PTE_W);
-    vm_map_identity((unsigned long)__kernel_start, (unsigned long)__kernel_end, PTE_R | PTE_W | PTE_X);
-    vm_map_identity((unsigned long)__kernel_end, ram_end, PTE_R | PTE_W);
+    vm_map_identity((unsigned long)__kernel_start, (unsigned long)__text_end, PTE_R | PTE_X);
+    vm_map_identity((unsigned long)__text_end, (unsigned long)__rodata_end, PTE_R);
+    vm_map_identity((unsigned long)__rodata_end, ram_end, PTE_R | PTE_W);
 
     vm_switch(vm_kernel_root);
 }
