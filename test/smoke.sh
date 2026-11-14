@@ -34,6 +34,21 @@ wait_for() {
     done
 }
 
+wait_exit() {
+    elapsed=0
+
+    while kill -0 $qemu 2>/dev/null; do
+        if [ $elapsed -ge $((TIMEOUT * 10)) ]; then
+            fail "QEMU did not power off within $TIMEOUT seconds"
+        fi
+
+        sleep 0.1
+        elapsed=$((elapsed + 1))
+    done
+
+    wait $qemu
+}
+
 check() {
     if grep -q "$2" "$LOG"; then
         echo "ok   $1"
@@ -53,12 +68,14 @@ qemu=$!
 exec 3> "$INPUT"
 
 wait_for '^> '
-printf 'pages\rhello\rpages\rcount\rpages\rfault\rpages\rfoo\rpages\rtest-end\r' >&3
-wait_for 'test-end'
-
-kill $qemu
-wait $qemu 2>/dev/null
+printf 'pages\rhello\rpages\rcount\rpages\rfault\rpages\rfoo\rpages\rpoweroff\r' >&3
+wait_exit
+status=$?
 exec 3>&-
+
+if grep -q 'panic: ' "$LOG"; then
+    fail "kernel panic"
+fi
 
 echo "== $NAME"
 
@@ -72,6 +89,13 @@ if [ "$(grep -c '^0x' "$LOG")" -eq 5 ] && [ "$(grep '^0x' "$LOG" | sort -u | wc 
     echo "ok   pages"
 else
     echo "FAIL pages"
+    failed=1
+fi
+
+if [ $status -eq 0 ]; then
+    echo "ok   poweroff"
+else
+    echo "FAIL poweroff (exit status $status)"
     failed=1
 fi
 

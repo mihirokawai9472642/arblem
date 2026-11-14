@@ -2,6 +2,8 @@
 #include "error.h"
 #include "page.h"
 #include "proc.h"
+#include "sbi.h"
+#include "sbinum.h"
 #include "sysnum.h"
 #include "thread.h"
 #include "timer.h"
@@ -105,6 +107,10 @@ long syscall_handle(unsigned long num, unsigned long arg0, unsigned long arg1) {
 
     if (num == SYSCALL_WAIT) {
         return syscall_wait(arg0, arg1);
+    }
+
+    if (num == SYSCALL_POWEROFF) {
+        sbi_shutdown(SBI_SRST_REASON_NONE);
     }
 
     return -ERR_NOSYS;

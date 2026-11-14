@@ -56,3 +56,7 @@ static inline long sys_spawn(const char *name, unsigned long len) {
 static inline long sys_wait(long pid, int *status) {
     return sys_call(SYSCALL_WAIT, pid, (long)status);
 }
+
+static inline long sys_poweroff(void) {
+    return sys_call(SYSCALL_POWEROFF, 0, 0);
+}

@@ -93,6 +93,7 @@ static void shell_exec(const char *line) {
         sys_puts("help: Show help message.\n");
         sys_puts("pages: Show free pages.\n");
         sys_puts("ticks: Show timer ticks.\n");
+        sys_puts("poweroff: Power off the machine.\n");
         sys_puts("hello, count, fault: Run the program.\n");
 
         return;
@@ -106,6 +107,12 @@ static void shell_exec(const char *line) {
 
     if (str_equal(line, "ticks")) {
         shell_puthex(sys_ticks());
+
+        return;
+    }
+
+    if (str_equal(line, "poweroff")) {
+        sys_puts(shell_strerror(sys_poweroff()));
 
         return;
     }

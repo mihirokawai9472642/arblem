@@ -26,9 +26,9 @@ sudo apt install clang lld llvm lldb make qemu-system-riscv
 | `make test`        | Run the smoke test with both firmwares            |
 | `make clean`       | Remove `build/`                                   |
 
-To quit QEMU, press `Ctrl-A` and then `X`.
+To quit QEMU, type `poweroff` in the shell, or press `Ctrl-A` and then `X`.
 
-The shell accepts `help`, `pages` and `ticks`, and runs the user programs `hello`, `count`, and `fault` by name.
+The shell accepts `help`, `pages`, `ticks` and `poweroff`, and runs the user programs `hello`, `count`, and `fault` by name.
 
 ## Structure
 
