@@ -35,7 +35,7 @@ void thread_exit(int code);
 
 // Wait for child thread id to exit, store its exit status in *code, and free
 // it. Returns 0, or -ERR_CHILD if id is not a child of the current thread.
-int thread_wait(int id, int *code);
+int thread_wait(unsigned long id, int *code);
 
 // The current thread's file for fd, or 0 if fd is out of range or unused.
 struct file *thread_file(unsigned long fd);

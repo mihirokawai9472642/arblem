@@ -162,8 +162,8 @@ void thread_exit(int code) {
     thread_sleep(&thread_dead);
 }
 
-int thread_wait(int id, int *code) {
-    if (id < 0 || id >= THREAD_MAX || thread_table[id].stack == 0 || thread_table[id].parent != thread_current) {
+int thread_wait(unsigned long id, int *code) {
+    if (id >= THREAD_MAX || thread_table[id].stack == 0 || thread_table[id].parent != thread_current) {
         return -ERR_CHILD;
     }
 
