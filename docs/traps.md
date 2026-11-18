@@ -68,7 +68,8 @@ layout:
 Only caller-saved registers are saved. `trap_handler` is a normal C function,
 so it preserves `s0`-`s11` itself, and `thread_switch` saves them when it
 switches threads. `gp` and `tp` are not saved because neither the kernel nor
-user programs use them. The frame is 17 registers, rounded up to keep the
+user programs use them yet, which lets their values leak between processes
+(see [Known issues](known-issues.md)). The frame is 17 registers, rounded up to keep the
 stack 16-byte aligned.
 
 The system call path changes the saved `a0` in the frame, so the program sees

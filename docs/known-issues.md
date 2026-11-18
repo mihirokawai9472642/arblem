@@ -7,12 +7,39 @@ Remove an entry when it is fixed.
 
 ### Orphaned processes are never freed
 
-`thread_exit` sets each child's `parent` to -1. When such an orphan exits
-later, nobody can `wait` for it, so its thread slot, kernel stack and address
-space are never freed. Today only the shell spawns programs, and the shell
-never exits, so this does not happen yet.
+`thread_exit` sets each child's `parent` to -1. When such an orphan exits,
+nobody can `wait` for it, so its thread slot, kernel stack and address space
+are never freed. A child that already exited before its parent becomes an
+orphan zombie in the same way.
+
+Any program that spawns a child and exits without waiting for it triggers
+this. With a test program that spawns `hello` and returns, each run leaks 8
+pages and one thread slot; after 5 runs the table is full and no program can
+start.
 
 Code: `thread_exit` and `thread_wait` in `kernel/thread.c`.
+
+### `gp` and `tp` leak between processes
+
+`trap_entry` saves only `ra`, `t0`-`t6`, `a0`-`a7` and `sp`, and
+`thread_switch` saves only `ra` and `s0`-`s11`. `gp` and `tp` are saved by
+neither, so when the scheduler switches from one user program to another, the
+second program sees the first one's values and keeps whatever it writes. A
+test program that sets `tp`, spins while another program writes `tp`, and then
+reads it back, finds it changed.
+
+No current program uses `gp` or `tp`, but thread-local storage or linker gp
+relaxation would break, and the values leak information between processes.
+
+Code: `kernel/trap.S`, `kernel/thread.S`.
+
+### `wait` truncates the PID
+
+`syscall_wait` takes the PID as `unsigned long`, and `thread_wait` takes an
+`int`. A PID with garbage in its upper 32 bits is truncated to a valid one:
+`wait(pid + (1L << 32), &status)` waits for `pid` and succeeds.
+
+Code: `syscall_wait` in `kernel/syscall.c`.
 
 ### The end of RAM is guessed from the DTB address
 
@@ -33,6 +60,9 @@ Code: `kernel_main` in `kernel/kernel.c`.
   memory on both sides. An overflow silently corrupts the neighboring page.
 - **Fixed-size tables.** At most 8 threads, including the idle thread and the
   shell, and 8 file descriptors per thread.
+- **Nothing restarts the shell.** If the shell faults or exits, it becomes a
+  zombie with no parent, only the idle thread is left, and the machine hangs
+  silently.
 - **Device addresses are hard-coded** for QEMU `virt` in `kernel/virt.h`.
 
 ### Processes
@@ -55,5 +85,11 @@ Code: `kernel_main` in `kernel/kernel.c`.
 
 - **`uart_putc` does not wait for the transmitter.** QEMU accepts bytes
   immediately, but real hardware would drop them.
+- **Unread input keeps the UART interrupt asserted.** The receive interrupt
+  stays raised until someone reads `RBR`, but `uart_interrupt` only wakes
+  readers. When a byte arrives while no thread is reading (for example while
+  the shell waits for `count`), a level-triggered PLIC on real hardware would
+  deliver the interrupt again right after every completion. QEMU's PLIC does
+  not, so this does not show up there.
 - **`poweroff` reports a failed shutdown as `-ERR_NOSYS`**, because
   `syscall_handle` falls through to the "unknown call" return.
