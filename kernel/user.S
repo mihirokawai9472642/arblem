@@ -13,6 +13,10 @@
 .global user_fault_end
 .global user_orphan
 .global user_orphan_end
+.global user_regcheck
+.global user_regcheck_end
+.global user_regclobber
+.global user_regclobber_end
 .global user_shell
 .global user_shell_end
 
@@ -37,6 +41,16 @@ user_fault_end:
 user_orphan:
     .incbin "build/user/orphan.elf"
 user_orphan_end:
+
+.balign 8
+user_regcheck:
+    .incbin "build/user/regcheck.elf"
+user_regcheck_end:
+
+.balign 8
+user_regclobber:
+    .incbin "build/user/regclobber.elf"
+user_regclobber_end:
 
 .balign 8
 user_shell:

@@ -107,7 +107,7 @@ static void shell_exec(const char *line) {
         sys_puts("pages: Show free pages.\n");
         sys_puts("ticks: Show timer ticks.\n");
         sys_puts("poweroff: Power off the machine.\n");
-        sys_puts("hello, count, fault, orphan: Run the program.\n");
+        sys_puts("hello, count, fault, orphan, regcheck: Run the program.\n");
 
         return;
     }

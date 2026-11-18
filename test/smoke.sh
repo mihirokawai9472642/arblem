@@ -76,12 +76,12 @@ exec 3> "$INPUT"
 
 # Type every command at once after the first prompt. The shell reads them one
 # by one; \r is what a terminal sends for Enter. `pages` runs between programs
-# to catch leaked pages, and `orphan` runs 7 times to check that orphans are
-# freed.
+# to catch leaked pages, `orphan` runs 7 times to check that orphans are
+# freed, and `regcheck` checks that gp and tp are saved per program.
 wait_for '^> '
 printf 'pages\rhello\rpages\r' >&3
 printf 'orphan\rorphan\rorphan\rorphan\rorphan\rorphan\rorphan\r' >&3
-printf 'count\rpages\rfault\rpages\rfoo\rpages\rpoweroff\r' >&3
+printf 'regcheck\rcount\rpages\rfault\rpages\rfoo\rpages\rpoweroff\r' >&3
 wait_exit
 status=$?
 exec 3>&-
@@ -95,6 +95,7 @@ check hello   'Hello World from U-mode!'
 check count   'count: 4'
 check fault   'exit: -1'
 check unknown 'Unknown command'
+check regs    'regs: ok'
 
 # hello runs once by itself and once from each of the 7 orphans. Without
 # orphan reaping, the thread table fills up after 5 orphans.
