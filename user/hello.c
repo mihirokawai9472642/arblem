@@ -1,3 +1,5 @@
+// The smallest program: print a line and exit.
+
 #include "sys.h"
 
 int main(void) {

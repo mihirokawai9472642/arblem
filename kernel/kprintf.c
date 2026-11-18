@@ -1,8 +1,12 @@
+// Kernel printf, printed through the SBI debug console. Supports only %x
+// (unsigned long as 0x plus 16 hex digits) and %s.
+
 #include "kprintf.h"
 #include "sbi.h"
 
 #define KPRINTF_BUF_SIZE 64
 
+// Output is collected here and sent to SBI in chunks, to make fewer calls.
 struct kprintf_buf {
     char data[KPRINTF_BUF_SIZE];
     unsigned long len;
@@ -44,6 +48,7 @@ void kprintf(const char *f, ...) {
     b.len = 0;
     __builtin_va_start(ap, f);
 
+    // Any other character, including an unknown % sequence, is printed as is.
     for (; *f; f++) {
         if (*f == '%' && *(f + 1) == 'x') {
             puthex(&b, __builtin_va_arg(ap, unsigned long));

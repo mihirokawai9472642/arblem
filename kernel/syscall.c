@@ -1,3 +1,7 @@
+// System call dispatch. trap_handler calls syscall_handle for every ecall
+// from U-mode. User pointers are only accessed through vm_copy_from_user and
+// vm_copy_to_user. See docs/syscalls.md.
+
 #include "syscall.h"
 #include "error.h"
 #include "file.h"
@@ -9,6 +13,7 @@
 #include "timer.h"
 #include "vm.h"
 
+// Size of the kernel buffer for a program name, including the NUL.
 #define SYSCALL_NAME_MAX 16
 
 static long syscall_write(unsigned long fd, unsigned long buf, unsigned long len) {
@@ -31,6 +36,7 @@ static long syscall_read(unsigned long fd, unsigned long buf, unsigned long len)
     return f->read(f, buf, len);
 }
 
+// name is not NUL-terminated in user memory; len gives its length.
 static long syscall_spawn(unsigned long name, unsigned long len) {
     char kname[SYSCALL_NAME_MAX];
 
@@ -47,6 +53,7 @@ static long syscall_spawn(unsigned long name, unsigned long len) {
     return proc_spawn(kname);
 }
 
+// status may be 0 when the caller does not want the exit status.
 static long syscall_wait(unsigned long pid, unsigned long status) {
     int code;
     int err = thread_wait(pid, &code);
@@ -67,6 +74,7 @@ long syscall_handle(unsigned long num, unsigned long arg0, unsigned long arg1, u
         return syscall_write(arg0, arg1, arg2);
     }
 
+    // Does not return.
     if (num == SYSCALL_EXIT) {
         thread_exit(arg0);
     }
@@ -91,6 +99,8 @@ long syscall_handle(unsigned long num, unsigned long arg0, unsigned long arg1, u
         return syscall_wait(arg0, arg1);
     }
 
+    // Returns only if the shutdown fails, and then falls through to
+    // -ERR_NOSYS.
     if (num == SYSCALL_POWEROFF) {
         sbi_shutdown(SBI_SRST_REASON_NONE);
     }

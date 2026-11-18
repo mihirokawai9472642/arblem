@@ -1,3 +1,9 @@
+// Trap entry and exit, and the first entry into U-mode.
+//
+// sscratch convention: while the hart runs in U-mode, sscratch holds the
+// kernel stack pointer of the current thread; while it runs in S-mode,
+// sscratch is 0. See docs/traps.md.
+
 #include "riscv.h"
 #include "trap.h"
 
@@ -6,12 +12,17 @@
 .global trap_enter_user
 .balign 4
 
+// stvec points here (direct mode), so every trap starts at this instruction.
 trap_entry:
+    // Swap sp and sscratch. From U-mode this loads the kernel stack. From
+    // S-mode it loads 0, so take the original sp back from sscratch.
     csrrw sp, sscratch, sp
     bnez sp, 1f
     csrr sp, sscratch
 
 1:
+    // Save the caller-saved registers in a trap frame (struct trap_frame in
+    // trap.c). trap_handler is a C function and preserves s0-s11 itself.
     addi sp, sp, -TRAP_FRAME_SIZE
 
     sd ra, 0(sp)
@@ -31,12 +42,16 @@ trap_entry:
     sd a6, 112(sp)
     sd a7, 120(sp)
 
+    // sscratch now holds the interrupted sp. Save it, and set sscratch to 0
+    // because the hart is in S-mode until the sret below.
     csrrw t0, sscratch, zero
     sd t0, 128(sp)
 
     mv a0, sp
     call trap_handler
 
+    // Returning to U-mode (SPP = 0): the next trap from U-mode must find
+    // this thread's kernel stack, which is sp without the frame.
     csrr t0, sstatus
     andi t0, t0, SSTATUS_SPP
     bnez t0, 2f
@@ -45,6 +60,8 @@ trap_entry:
     csrw sscratch, t0
 
 2:
+    // Restore the frame, possibly modified by trap_handler (a0 holds a
+    // system call's return value). sp goes last, since it is the base.
     ld ra, 0(sp)
     ld t0, 8(sp)
     ld t1, 16(sp)
@@ -65,9 +82,16 @@ trap_entry:
 
     sret
 
+// void trap_enter_user(unsigned long pc, unsigned long sp)
+//
+// Enter U-mode at pc with stack pointer sp, as if returning from a trap.
+// The current kernel sp becomes this thread's kernel stack for later traps.
 trap_enter_user:
+    // No trap may arrive while sscratch is non-zero in S-mode. In U-mode,
+    // S-mode interrupts are enabled whatever SIE says.
     csrci sstatus, SSTATUS_SIE
 
+    // sret returns to U-mode (SPP = 0) at sepc.
     li t0, SSTATUS_SPP
     csrc sstatus, t0
     csrw sepc, a0

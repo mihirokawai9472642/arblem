@@ -1,3 +1,6 @@
+// Trap dispatch: interrupts, system calls and exceptions. trap_entry in
+// trap.S saves registers and calls trap_handler. See docs/traps.md.
+
 #include "kprintf.h"
 #include "panic.h"
 #include "plic.h"
@@ -8,6 +11,8 @@
 #include "uart.h"
 #include "virt.h"
 
+// Registers saved by trap_entry, in the order trap.S stores them.
+// sp is the stack pointer of the interrupted code.
 struct trap_frame {
     unsigned long ra;
     unsigned long t0, t1, t2, t3, t4, t5, t6;
@@ -16,6 +21,9 @@ struct trap_frame {
 };
 
 void trap_handler(struct trap_frame *f) {
+    // These CSRs belong to the hart. If this trap switches threads, the next
+    // thread's traps overwrite them, so keep copies on this kernel stack and
+    // write sepc and sstatus back before returning.
     unsigned long cause = csr_read(scause);
     unsigned long epc = csr_read(sepc);
     unsigned long status = csr_read(sstatus);
@@ -36,6 +44,7 @@ void trap_handler(struct trap_frame *f) {
             plic_complete(irq);
         }
 
+        // Preemption: every interrupt gives the next thread a turn.
         thread_yield();
         csr_write(sepc, epc);
         csr_write(sstatus, status);
@@ -43,6 +52,8 @@ void trap_handler(struct trap_frame *f) {
     }
 
     if (cause == EXC_USER_ECALL) {
+        // The return value goes into the saved a0, and the program resumes
+        // after the 4-byte ecall instruction.
         f->a0 = syscall_handle(f->a7, f->a0, f->a1, f->a2);
         csr_write(sepc, epc + 4);
         csr_write(sstatus, status);
@@ -54,6 +65,9 @@ void trap_handler(struct trap_frame *f) {
     kprintf("sepc: %x\n", epc);
     kprintf("stval: %x\n", tval);
 
+    // An ebreak in kernel code is a debugging marker: report it and continue
+    // with the next instruction. Low bits 11 mean a 32-bit instruction;
+    // anything else is a 16-bit compressed one.
     if (cause == EXC_BREAKPOINT && (status & SSTATUS_SPP)) {
         unsigned short insn = *(volatile unsigned short *)epc;
         epc += ((insn & 3) == 3) ? 4 : 2;
@@ -61,6 +75,7 @@ void trap_handler(struct trap_frame *f) {
         return;
     }
 
+    // Any other exception from U-mode ends the program.
     if ((status & SSTATUS_SPP) == 0) {
         thread_exit(-1);
     }

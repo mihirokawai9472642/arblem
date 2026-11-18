@@ -1,9 +1,15 @@
+// The shell: read a line, run a built-in command or spawn the program with
+// that name, and wait for it. The kernel starts it at boot with the console
+// as stdin, stdout and stderr. See docs/user.md.
+
 #include "error.h"
 #include "str.h"
 #include "sys.h"
 
+// Longest line, including the NUL.
 #define SHELL_LINE_MAX 64
 
+// Print x as 0x plus 16 hex digits and a newline.
 static void shell_puthex(unsigned long x) {
     char buf[19] = "0x";
 
@@ -16,6 +22,7 @@ static void shell_puthex(unsigned long x) {
     sys_write(FD_STDOUT, buf, sizeof(buf));
 }
 
+// Print x in decimal and a newline. Digits are filled in from the end.
 static void shell_putdec(int x) {
     char buf[12];
     int i = sizeof(buf);
@@ -35,6 +42,9 @@ static void shell_putdec(int x) {
     sys_write(FD_STDOUT, buf + i, sizeof(buf) - i);
 }
 
+// Read one line into line, echoing as the user types. The kernel has no line
+// discipline, so the shell handles echo and Backspace itself. Enter arrives
+// as \r from a terminal.
 static void shell_readline(char *line) {
     int len = 0;
 
@@ -48,6 +58,7 @@ static void shell_readline(char *line) {
             return;
         }
 
+        // Backspace (DEL or BS): move back, blank the character, move back.
         if (c == 0x7f || c == '\b') {
             if (len > 0) {
                 len--;
@@ -57,6 +68,7 @@ static void shell_readline(char *line) {
             continue;
         }
 
+        // Characters past the limit are dropped.
         if (len < SHELL_LINE_MAX - 1) {
             line[len++] = c;
             sys_putc(c);
@@ -64,6 +76,7 @@ static void shell_readline(char *line) {
     }
 }
 
+// Message for a negative error code from sys_spawn or sys_poweroff.
 static const char *shell_strerror(long err) {
     if (err == -ERR_NOENT) {
         return "Unknown command\n";
@@ -111,12 +124,14 @@ static void shell_exec(const char *line) {
         return;
     }
 
+    // Returns only if the shutdown fails.
     if (str_equal(line, "poweroff")) {
         sys_puts(shell_strerror(sys_poweroff()));
 
         return;
     }
 
+    // Not a built-in: run it as a program and wait for it to finish.
     long pid = sys_spawn(line, str_len(line));
 
     if (pid < 0) {

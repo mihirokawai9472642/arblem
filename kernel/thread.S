@@ -1,3 +1,5 @@
+// Context switch between kernel threads. See docs/threads.md.
+
 #include "riscv.h"
 #include "thread.h"
 
@@ -5,6 +7,12 @@
 .global thread_switch
 .global thread_entry
 
+// void thread_switch(unsigned long *old_sp, unsigned long new_sp)
+//
+// Save the callee-saved registers on the current stack, store sp in *old_sp,
+// then switch to new_sp and restore the registers saved there. Returns into
+// the new thread, at the ra loaded from its stack. Caller-saved registers
+// need no saving: the compiler already treats this as an ordinary call.
 thread_switch:
     addi sp, sp, -THREAD_FRAME_SIZE
 
@@ -43,6 +51,10 @@ thread_switch:
 
     ret
 
+// First code of a new thread. thread_create builds a frame whose ra points
+// here, with s0 = the thread's entry function and s1 = its argument.
+// Interrupts are enabled, so a kernel-only thread (the idle thread) can be
+// preempted.
 thread_entry:
     csrsi sstatus, SSTATUS_SIE
     mv a0, s1

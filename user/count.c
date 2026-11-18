@@ -1,5 +1,9 @@
+// Count from 0 to 4 with a busy loop between lines. The loop never makes a
+// system call, so the program only gives up the CPU when the timer preempts it.
+
 #include "sys.h"
 
+// In .bss, so the program also exercises a zero-filled, writable segment.
 static volatile int count;
 
 int main(void) {

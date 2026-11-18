@@ -1,20 +1,28 @@
+// Calls into OpenSBI, the M-mode firmware. See docs/devices.md#sbi.
+
 #include "sbi.h"
 
 #define SBI_SUCCESS 0
-#define SBI_EXT_BASE 0x10
-#define SBI_EXT_SRST 0x53525354
-#define SBI_EXT_DBCN 0x4442434e
 
+// Extension IDs. SRST and DBCN are their names in ASCII.
+#define SBI_EXT_BASE 0x10
+#define SBI_EXT_SRST 0x53525354  // "SRST": System Reset
+#define SBI_EXT_DBCN 0x4442434e  // "DBCN": Debug Console
+
+// Function IDs within those extensions.
 #define SBI_BASE_GET_SPEC_VERSION 0
 #define SBI_SRST_SYSTEM_RESET     0
 #define SBI_SRST_TYPE_SHUTDOWN    0
 #define SBI_DBCN_WRITE            0
 
+// Every SBI call returns an error code in a0 and a value in a1.
 struct sbi_ret {
     long error;
     unsigned long value;
 };
 
+// ecall from S-mode traps into OpenSBI: a7 = extension, a6 = function,
+// a0-a2 = arguments.
 static struct sbi_ret sbi_call(unsigned long eid, unsigned long fid, unsigned long arg0, unsigned long arg1, unsigned long arg2) {
     register unsigned long a0 __asm__("a0") = arg0;
     register unsigned long a1 __asm__("a1") = arg1;
@@ -37,6 +45,9 @@ void sbi_shutdown(unsigned long reason) {
     sbi_call(SBI_EXT_SRST, SBI_SRST_SYSTEM_RESET, SBI_SRST_TYPE_SHUTDOWN, reason, 0);
 }
 
+// DBCN takes the buffer's physical address (low and high halves). Kernel
+// memory is identity-mapped, so the pointer value is the physical address.
+// The firmware may write fewer bytes than asked; loop until all are out.
 long sbi_console_write(const char *buf, unsigned long len) {
     while (len > 0) {
         struct sbi_ret ret = sbi_call(SBI_EXT_DBCN, SBI_DBCN_WRITE, len, (unsigned long)buf, 0);

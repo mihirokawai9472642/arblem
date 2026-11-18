@@ -1,3 +1,9 @@
+// User programs embedded in the kernel image. Each ELF file built by the
+// Makefile is included byte for byte between user_<name> and user_<name>_end,
+// and proc_images[] in proc.c maps program names to these symbols.
+//
+// To add a program, copy one block here and see docs/user.md.
+
 .section .rodata
 .global user_hello
 .global user_hello_end
@@ -8,6 +14,8 @@
 .global user_shell
 .global user_shell_end
 
+// 8-byte alignment lets elf_check and proc_create read the headers' 8-byte
+// fields in place.
 .balign 8
 user_hello:
     .incbin "build/user/hello.elf"

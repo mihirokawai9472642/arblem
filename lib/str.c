@@ -1,3 +1,6 @@
+// String helpers for both the kernel and user programs. Built once and linked
+// into each, so this code must not depend on either side.
+
 #include "str.h"
 
 int str_equal(const char *a, const char *b) {

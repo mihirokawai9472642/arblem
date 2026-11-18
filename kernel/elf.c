@@ -1,3 +1,6 @@
+// ELF validation. The loader in proc.c trusts every offset and size it reads
+// from the image, so each one is bounds-checked here first.
+
 #include "elf.h"
 
 int elf_check(const char *image, unsigned long size) {
@@ -19,10 +22,13 @@ int elf_check(const char *image, unsigned long size) {
         return -1;
     }
 
+    // The program header table is read through struct elf_phdr pointers, so
+    // it must use that size and be aligned for 8-byte fields.
     if (eh->phentsize != sizeof(struct elf_phdr) || eh->phoff % 8 != 0) {
         return -1;
     }
 
+    // Written so that no addition can overflow.
     if (eh->phoff > size || eh->phnum > (size - eh->phoff) / sizeof(struct elf_phdr)) {
         return -1;
     }

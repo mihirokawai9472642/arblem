@@ -1,3 +1,7 @@
+// Physical page allocator: a linked list of free 4 KiB pages. Each free page
+// holds the pointer to the next one in its first word, so the list costs no
+// memory of its own. See docs/memory.md.
+
 #include "page.h"
 
 struct page_node {
@@ -25,6 +29,8 @@ void *page_alloc(void) {
     page_free_list = page->next;
     page_free_pages--;
 
+    // Callers rely on zeroed pages: new page tables start empty, and a new
+    // program's .bss starts as zero.
     unsigned long *words = (unsigned long *)page;
 
     for (unsigned long i = 0; i < PAGE_SIZE / sizeof(unsigned long); i++) {
@@ -34,6 +40,7 @@ void *page_alloc(void) {
     return page;
 }
 
+// No check for double frees or for pages outside the managed range.
 void page_free(void *page) {
     struct page_node *node = page;
 

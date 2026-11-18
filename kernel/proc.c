@@ -1,3 +1,6 @@
+// Processes: load an embedded ELF program into a new address space and start
+// a thread that enters it in U-mode. See docs/processes.md.
+
 #include "proc.h"
 #include "elf.h"
 #include "error.h"
@@ -8,9 +11,12 @@
 #include "trap.h"
 #include "vm.h"
 
+// User programs live in [PROC_BASE, PROC_STACK_TOP), which is exactly one
+// top-level page table entry (see vm_create). The top page is the stack.
 #define PROC_BASE      0x40000000UL
 #define PROC_STACK_TOP 0x80000000UL
 
+// An ELF file embedded in the kernel image by user.S.
 struct proc_image {
     const char *name;
     const char *start;
@@ -22,6 +28,7 @@ extern char user_count[], user_count_end[];
 extern char user_fault[], user_fault_end[];
 extern char user_shell[], user_shell_end[];
 
+// The programs proc_spawn can start, by name.
 static const struct proc_image proc_images[] = {
     {"hello", user_hello, user_hello_end},
     {"count", user_count, user_count_end},
@@ -29,10 +36,15 @@ static const struct proc_image proc_images[] = {
     {"shell", user_shell, user_shell_end},
 };
 
+// Thread entry function of every process: enter U-mode at the ELF entry point
+// with the stack at the top of the user range. Does not return.
 static void proc_entry(unsigned long entry) {
     trap_enter_user(entry, PROC_STACK_TOP);
 }
 
+// Allocate a zeroed page and map it at va. Returns the page's kernel address,
+// or 0 when out of memory. On failure nothing stays allocated except page
+// tables, which vm_free releases with the rest of the address space.
 static char *proc_map_page(unsigned long *vm, unsigned long va, unsigned long perm) {
     char *page = page_alloc();
 
@@ -48,6 +60,8 @@ static char *proc_map_page(unsigned long *vm, unsigned long va, unsigned long pe
     return page;
 }
 
+// Translate ELF segment flags into PTE flags. RISC-V has no write-only pages,
+// so a writable segment is made readable too.
 static unsigned long proc_perm(unsigned int flags) {
     unsigned long perm = PTE_U;
 
@@ -66,6 +80,9 @@ static unsigned long proc_perm(unsigned int flags) {
     return perm;
 }
 
+// Map and fill one PT_LOAD segment. *next is the first address the segment may
+// use; it is advanced past the segment, so segments must come in address order
+// and never share a page. Bytes past filesz stay zero (.bss).
 static int proc_load(unsigned long *vm, const char *image, const struct elf_phdr *ph, unsigned long *next) {
     unsigned long end = PROC_STACK_TOP - PAGE_SIZE;
 
@@ -73,6 +90,7 @@ static int proc_load(unsigned long *vm, const char *image, const struct elf_phdr
         return -ERR_NOEXEC;
     }
 
+    // W^X: refuse segments that are both writable and executable.
     if ((ph->flags & ELF_PF_W) && (ph->flags & ELF_PF_X)) {
         return -ERR_NOEXEC;
     }
@@ -94,6 +112,9 @@ static int proc_load(unsigned long *vm, const char *image, const struct elf_phdr
     return 0;
 }
 
+// Build an address space from an ELF image, map a one-page stack, and create
+// the thread. Returns the thread ID or a negative error; on error everything
+// allocated so far is freed.
 static int proc_create(const char *image, unsigned long size) {
     if (elf_check(image, size) != 0) {
         return -ERR_NOEXEC;

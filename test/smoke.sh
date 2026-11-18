@@ -1,5 +1,9 @@
 #!/bin/sh
 
+# Smoke test: boot the kernel in QEMU, type commands into the shell, and check
+# the console output. Run by `make test`, which passes the QEMU command line
+# as the arguments. See docs/build-and-test.md.
+
 set -u
 
 LOG=build/test.log
@@ -14,6 +18,8 @@ fail() {
     exit 1
 }
 
+# Wait until the log contains $1. Stop early on a panic, a timeout, or QEMU
+# exiting.
 wait_for() {
     elapsed=0
 
@@ -31,6 +37,7 @@ wait_for() {
     done
 }
 
+# Wait for QEMU to exit, and return its exit status.
 wait_exit() {
     elapsed=0
 
@@ -46,6 +53,7 @@ wait_exit() {
     wait $qemu
 }
 
+# Report check $1 as passed if the log contains $2.
 check() {
     if grep -q "$2" "$LOG"; then
         echo "ok   $1"
@@ -55,6 +63,7 @@ check() {
     fi
 }
 
+# QEMU reads the console from a named pipe, so the test can type into it.
 rm -f "$INPUT"
 mkfifo "$INPUT"
 : > "$LOG"
@@ -62,8 +71,12 @@ mkfifo "$INPUT"
 "$@" < "$INPUT" > "$LOG" 2>&1 &
 qemu=$!
 
+# Keep the pipe open for writing, so QEMU does not see end of input.
 exec 3> "$INPUT"
 
+# Type every command at once after the first prompt. The shell reads them one
+# by one; \r is what a terminal sends for Enter. `pages` runs between programs
+# to catch leaked pages.
 wait_for '^> '
 printf 'pages\rhello\rpages\rcount\rpages\rfault\rpages\rfoo\rpages\rpoweroff\r' >&3
 wait_exit
@@ -80,6 +93,7 @@ check count   'count: 4'
 check fault   'exit: -1'
 check unknown 'Unknown command'
 
+# Five `pages` outputs, all the same: no program leaked memory.
 if [ "$(grep -c '^0x' "$LOG")" -eq 5 ] && [ "$(grep '^0x' "$LOG" | sort -u | wc -l)" -eq 1 ]; then
     echo "ok   pages"
 else
@@ -87,6 +101,7 @@ else
     failed=1
 fi
 
+# A clean shutdown through `poweroff` makes QEMU exit with status 0.
 if [ $status -eq 0 ]; then
     echo "ok   poweroff"
 else

@@ -1,11 +1,17 @@
+// The console file: stdin, stdout and stderr of user programs, backed by the
+// UART driver.
+
 #include "console.h"
 #include "error.h"
 #include "file.h"
 #include "uart.h"
 #include "vm.h"
 
+// Bytes copied from user memory per chunk in console_write.
 #define CONSOLE_BUF_SIZE 64
 
+// Block until a key arrives and return that one byte. There is no line
+// buffering; the shell edits lines itself.
 static long console_read(struct file *f, unsigned long buf, unsigned long len) {
     (void)f;
 
@@ -22,6 +28,8 @@ static long console_read(struct file *f, unsigned long buf, unsigned long len) {
     return 1;
 }
 
+// Copy the user buffer through a small kernel buffer and send it to the UART.
+// On a bad address, chunks before it have already been written.
 static long console_write(struct file *f, unsigned long buf, unsigned long len) {
     char kbuf[CONSOLE_BUF_SIZE];
 
