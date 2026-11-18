@@ -30,7 +30,8 @@ void thread_sleep(void *chan);
 void thread_wakeup(void *chan);
 
 // End the current thread with exit status code. Does not return. The thread
-// stays allocated until its parent calls thread_wait.
+// stays allocated until its parent calls thread_wait, or until the scheduler
+// frees it if it has no parent.
 void thread_exit(int code);
 
 // Wait for child thread id to exit, store its exit status in *code, and free

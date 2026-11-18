@@ -21,7 +21,7 @@ void thread_entry(void);
 //   stack == 0                       free slot
 //   stack != 0, chan == 0            runnable
 //   stack != 0, chan != 0            sleeping on chan
-//   stack != 0, chan == &thread_dead exited, waiting for thread_wait
+//   stack != 0, chan == &thread_dead exited, waiting to be freed
 struct thread {
     unsigned long sp;      // Saved kernel sp while switched out
     void *chan;            // Wait channel, 0 if runnable
@@ -108,8 +108,31 @@ void thread_start(void) {
     thread_switch(&unused, thread_table[0].sp);
 }
 
+// Release a thread that has exited: its page table, the user pages mapped in
+// it, and its kernel stack. The slot becomes free.
+static void thread_free(struct thread *t) {
+    vm_free(t->vm);
+    page_free(t->stack);
+    t->stack = 0;
+}
+
+// Free every exited thread whose parent is gone, since nobody will ever wait
+// for it. The current thread is skipped: if it has just exited, it is still
+// running on its own kernel stack and page table.
+static void thread_reap(void) {
+    for (int i = 0; i < THREAD_MAX; i++) {
+        struct thread *t = &thread_table[i];
+
+        if (i != thread_current && t->stack != 0 && t->chan == &thread_dead && t->parent == -1) {
+            thread_free(t);
+        }
+    }
+}
+
 void thread_yield(void) {
     int prev = thread_current;
+
+    thread_reap();
 
     // Find the next slot that is in use and not sleeping, wrapping around.
     // The idle thread guarantees that the loop ends.
@@ -148,8 +171,8 @@ void thread_wakeup(void *chan) {
 void thread_exit(int code) {
     thread_table[thread_current].exit_code = code;
 
-    // Children become orphans. Nothing frees an orphan after it exits yet;
-    // see docs/known-issues.md.
+    // Children become orphans. Once an orphan has exited, thread_reap frees
+    // it, since no parent is left to wait for it.
     for (int i = 0; i < THREAD_MAX; i++) {
         if (thread_table[i].parent == thread_current) {
             thread_table[i].parent = -1;
@@ -157,7 +180,8 @@ void thread_exit(int code) {
     }
 
     // Let any thread_wait recheck its child, then stop for good. The slot,
-    // stack and page table stay until the parent's thread_wait frees them.
+    // stack and page table stay until the parent's thread_wait, or
+    // thread_reap for an orphan, frees them.
     thread_wakeup(&thread_exit_wait);
     thread_sleep(&thread_dead);
 }
@@ -177,9 +201,7 @@ int thread_wait(unsigned long id, int *code) {
     *code = t->exit_code;
 
     // The child never runs again, so its page table and kernel stack can go.
-    vm_free(t->vm);
-    page_free(t->stack);
-    t->stack = 0;
+    thread_free(t);
 
     return 0;
 }
