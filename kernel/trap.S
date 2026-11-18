@@ -21,8 +21,9 @@ trap_entry:
     csrr sp, sscratch
 
 1:
-    // Save the caller-saved registers in a trap frame (struct trap_frame in
-    // trap.c). trap_handler is a C function and preserves s0-s11 itself.
+    // Save the caller-saved registers, plus gp and tp, in a trap frame
+    // (struct trap_frame in trap.c). trap_handler is a C function and
+    // preserves s0-s11 itself.
     addi sp, sp, -TRAP_FRAME_SIZE
 
     sd ra, 0(sp)
@@ -41,6 +42,12 @@ trap_entry:
     sd a5, 104(sp)
     sd a6, 112(sp)
     sd a7, 120(sp)
+
+    // gp and tp are neither caller- nor callee-saved: no function touches
+    // them, so they still hold the user program's values. Save them too, or
+    // the next program to run would overwrite them.
+    sd gp, 136(sp)
+    sd tp, 144(sp)
 
     // sscratch now holds the interrupted sp. Save it, and set sscratch to 0
     // because the hart is in S-mode until the sret below.
@@ -78,6 +85,8 @@ trap_entry:
     ld a5, 104(sp)
     ld a6, 112(sp)
     ld a7, 120(sp)
+    ld gp, 136(sp)
+    ld tp, 144(sp)
     ld sp, 128(sp)
 
     sret
@@ -98,5 +107,10 @@ trap_enter_user:
 
     csrw sscratch, sp
     mv sp, a1
+
+    // Start the program with gp and tp cleared, instead of whatever the
+    // previous program left in them.
+    mv gp, zero
+    mv tp, zero
 
     sret

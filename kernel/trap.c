@@ -11,13 +11,15 @@
 #include "uart.h"
 #include "virt.h"
 
-// Registers saved by trap_entry, in the order trap.S stores them.
-// sp is the stack pointer of the interrupted code.
+// Registers saved by trap_entry, at the offsets trap.S uses. sp is the stack
+// pointer of the interrupted code. gp and tp belong to the user program: the
+// kernel never uses them, but another program would overwrite them.
 struct trap_frame {
     unsigned long ra;
     unsigned long t0, t1, t2, t3, t4, t5, t6;
     unsigned long a0, a1, a2, a3, a4, a5, a6, a7;
     unsigned long sp;
+    unsigned long gp, tp;
 };
 
 void trap_handler(struct trap_frame *f) {
