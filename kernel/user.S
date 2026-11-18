@@ -11,6 +11,8 @@
 .global user_count_end
 .global user_fault
 .global user_fault_end
+.global user_orphan
+.global user_orphan_end
 .global user_shell
 .global user_shell_end
 
@@ -30,6 +32,11 @@ user_count_end:
 user_fault:
     .incbin "build/user/fault.elf"
 user_fault_end:
+
+.balign 8
+user_orphan:
+    .incbin "build/user/orphan.elf"
+user_orphan_end:
 
 .balign 8
 user_shell:

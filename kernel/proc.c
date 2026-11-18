@@ -26,6 +26,7 @@ struct proc_image {
 extern char user_hello[], user_hello_end[];
 extern char user_count[], user_count_end[];
 extern char user_fault[], user_fault_end[];
+extern char user_orphan[], user_orphan_end[];
 extern char user_shell[], user_shell_end[];
 
 // The programs proc_spawn can start, by name.
@@ -33,6 +34,7 @@ static const struct proc_image proc_images[] = {
     {"hello", user_hello, user_hello_end},
     {"count", user_count, user_count_end},
     {"fault", user_fault, user_fault_end},
+    {"orphan", user_orphan, user_orphan_end},
     {"shell", user_shell, user_shell_end},
 };
 
