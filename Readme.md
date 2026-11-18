@@ -67,6 +67,7 @@ To quit QEMU, type `poweroff` in the shell, or press `Ctrl-A` and then `X`.
 | `hello`    | Print a message from U-mode              |
 | `count`    | Count from 0 to 4 slowly                 |
 | `fault`    | Write to address 0 and get killed        |
+| `orphan`   | Start `hello` and exit without waiting for it |
 
 ## Structure
 

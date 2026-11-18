@@ -9,7 +9,7 @@ RISC-V has three privilege levels, and Arblem uses all of them:
 
 ```
 +-----------------------------------------------------------+
-| U-mode   user programs: shell, hello, count, fault        |
+| U-mode   user programs: the shell and what it starts      |
 |          own address space, reach the kernel with ecall   |
 +-----------------------------------------------------------+
 | S-mode   Arblem kernel                                    |
