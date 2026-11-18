@@ -50,9 +50,9 @@ The smoke test boots the real kernel in QEMU and types into the shell:
 1. Creates a named pipe, `build/test.in`, for QEMU's standard input, and
    logs all output to `build/test.log`.
 2. Waits for the `> ` prompt.
-3. Types `pages`, `hello`, `pages`, `orphan` seven times, `count`, `pages`,
-   `fault`, `pages`, `foo`, `pages`, `poweroff`, each ending in `\r` as a
-   terminal would send it. `count` takes about a second, which gives the
+3. Types `pages`, `hello`, `pages`, `orphan` seven times, `regcheck`,
+   `count`, `pages`, `fault`, `pages`, `foo`, `pages`, `poweroff`, each ending
+   in `\r` as a terminal would send it. `count` takes about a second, which gives the
    orphans' children time to finish and be freed before the next `pages`.
 4. Waits for QEMU to exit.
 
@@ -65,6 +65,7 @@ It then checks the log:
 | `count`   | `count` reached `count: 4`                               |
 | `fault`   | The shell printed `exit: -1` for `fault`                 |
 | `unknown` | `foo` was reported as `Unknown command`                  |
+| `regs`    | `regcheck` printed `regs: ok`: `gp` and `tp` are saved per program, and a new program starts with them cleared |
 | `orphan`  | `hello` ran 8 times: once alone, and once from each `orphan`, so orphans are freed and the thread table never fills up |
 | `pages`   | All five `pages` outputs are identical, so nothing leaked |
 | `poweroff`| QEMU exited with status 0                                |

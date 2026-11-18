@@ -26,6 +26,8 @@ When `main` runs, the stack pointer is `0x80000000` and the stack is one page
 | `count` | Prints `count: 0` to `count: 4` with a busy loop between lines, to show preemption |
 | `fault` | Writes to address 0, which page-faults; the kernel ends it with status -1 |
 | `orphan` | Spawns `hello` and exits without waiting for it, leaving `hello` an orphan; the smoke test uses it to check that orphans are freed |
+| `regcheck` | Sets `gp` and `tp`, starts `regclobber`, and prints `regs: ok` if its own values survived and `regclobber` started with them cleared; used by the smoke test |
+| `regclobber` | Helper for `regcheck`: keeps overwriting `gp` and `tp`, and exits with status 1 if they did not start cleared |
 
 ## The shell
 

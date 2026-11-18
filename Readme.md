@@ -68,6 +68,7 @@ To quit QEMU, type `poweroff` in the shell, or press `Ctrl-A` and then `X`.
 | `count`    | Count from 0 to 4 slowly                 |
 | `fault`    | Write to address 0 and get killed        |
 | `orphan`   | Start `hello` and exit without waiting for it |
+| `regcheck` | Check that `gp` and `tp` are kept per program |
 
 ## Structure
 
