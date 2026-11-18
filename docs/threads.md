@@ -30,7 +30,7 @@ follows from `stack` and `chan`:
 | Free      | 0       | -               | No         |
 | Runnable  | set     | 0               | Yes        |
 | Sleeping  | set     | wait channel    | No         |
-| Exited    | set     | `&thread_dead`  | No, waits for `thread_wait` to free it |
+| Exited    | set     | `&thread_dead`  | No, waits to be freed by `thread_wait` or `thread_reap` |
 
 ## Creating a thread
 
@@ -77,6 +77,9 @@ current thread, it returns at once. Otherwise it switches the page table with
 The idle thread is always runnable, so the search always ends. It loops on
 `wfi` with interrupts enabled, which stops the hart until the next interrupt.
 
+Before it picks the next thread, `thread_yield` calls `thread_reap` to free
+exited orphans (see [Exit and wait](#exit-and-wait)).
+
 `thread_yield` is called from two places:
 
 - `trap_handler`, after every interrupt (preemption).
@@ -118,18 +121,34 @@ that gap cannot be lost.
 3. Wakes all threads in `thread_wait`.
 4. Sleeps on `&thread_dead` and never runs again.
 
-The thread keeps its slot, stack and page table, so it is a *zombie* until its
-parent collects it.
+The thread keeps its slot, stack and page table, so it is a *zombie* until
+someone frees it. It cannot free them itself, because it is still running on
+that kernel stack and page table. Who frees it depends on its parent:
+
+- **The parent is alive**: the parent collects it with `thread_wait`.
+- **There is no parent** (`parent == -1`, an *orphan*): `thread_reap` frees it.
 
 `thread_wait(id, &code)`:
 
 1. Fails with `-ERR_CHILD` unless `id` is a live slot whose parent is the
    caller.
 2. Sleeps on `&thread_exit_wait` until the child is on `&thread_dead`.
-3. Copies the exit code, frees the child's page table, user pages and kernel
-   stack, and marks the slot free.
+3. Copies the exit code and frees the child with `thread_free`: its page
+   table, user pages and kernel stack, and its slot.
 
-Orphans are never freed. See [Known issues](known-issues.md).
+`thread_reap` runs at the start of every `thread_yield`. It frees, with
+`thread_free`, every zombie whose `parent` is -1, except the current thread,
+which may have just exited and is still running on its own stack. That covers
+both orders:
+
+- **The child exited before its parent**: the parent's `thread_exit` turns it
+  into an orphan, and the parent's own `thread_yield` frees it right away.
+- **The child exits after its parent**: it is already an orphan, so the next
+  `thread_yield` on another thread frees it. The idle thread yields on every
+  timer interrupt, so this takes at most about 10 ms.
+
+`thread_yield` always runs with interrupts off, and the zombie's page table is
+never the active one there, so freeing needs no lock and no extra TLB flush.
 
 ## File table
 

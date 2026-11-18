@@ -5,20 +5,6 @@ Remove an entry when it is fixed.
 
 ## Bugs
 
-### Orphaned processes are never freed
-
-`thread_exit` sets each child's `parent` to -1. When such an orphan exits,
-nobody can `wait` for it, so its thread slot, kernel stack and address space
-are never freed. A child that already exited before its parent becomes an
-orphan zombie in the same way.
-
-Any program that spawns a child and exits without waiting for it triggers
-this. With a test program that spawns `hello` and returns, each run leaks 8
-pages and one thread slot; after 5 runs the table is full and no program can
-start.
-
-Code: `thread_exit` and `thread_wait` in `kernel/thread.c`.
-
 ### `gp` and `tp` leak between processes
 
 `trap_entry` saves only `ra`, `t0`-`t6`, `a0`-`a7` and `sp`, and
@@ -52,8 +38,8 @@ Code: `kernel_main` in `kernel/kernel.c`.
   memory on both sides. An overflow silently corrupts the neighboring page.
 - **Fixed-size tables.** At most 8 threads, including the idle thread and the
   shell, and 8 file descriptors per thread.
-- **Nothing restarts the shell.** If the shell faults or exits, it becomes a
-  zombie with no parent, only the idle thread is left, and the machine hangs
+- **Nothing restarts the shell.** If the shell faults or exits, it is freed
+  like any other orphan, only the idle thread is left, and the machine hangs
   silently.
 - **Device addresses are hard-coded** for QEMU `virt` in `kernel/virt.h`.
 
