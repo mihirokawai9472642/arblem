@@ -5,20 +5,6 @@ Remove an entry when it is fixed.
 
 ## Bugs
 
-### `gp` and `tp` leak between processes
-
-`trap_entry` saves only `ra`, `t0`-`t6`, `a0`-`a7` and `sp`, and
-`thread_switch` saves only `ra` and `s0`-`s11`. `gp` and `tp` are saved by
-neither, so when the scheduler switches from one user program to another, the
-second program sees the first one's values and keeps whatever it writes. A
-test program that sets `tp`, spins while another program writes `tp`, and then
-reads it back, finds it changed.
-
-No current program uses `gp` or `tp`, but thread-local storage or linker gp
-relaxation would break, and the values leak information between processes.
-
-Code: `kernel/trap.S`, `kernel/thread.S`.
-
 ### The end of RAM is guessed from the DTB address
 
 `kernel_main` passes the device tree address to `page_init` and `vm_init` as the
@@ -51,6 +37,11 @@ Code: `kernel_main` in `kernel/kernel.c`.
   cannot grow its memory, and `main` takes no `argc` or `argv`.
 - **Program names are shorter than 16 bytes**, the size of the kernel buffer in
   `syscall_spawn`.
+- **A new program starts with kernel values in its registers.**
+  `trap_enter_user` clears only `gp` and `tp`, so `ra`, `s0`-`s11` and the
+  other registers still hold what the kernel left in them, such as kernel
+  addresses. They are not another program's data, but a program can read
+  them.
 
 ### Files
 

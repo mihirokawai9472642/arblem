@@ -54,7 +54,7 @@ in the same way.
 
 ## The trap frame
 
-`trap_entry` pushes a 144-byte frame (`TRAP_FRAME_SIZE` in `kernel/trap.h`) on
+`trap_entry` pushes a 160-byte frame (`TRAP_FRAME_SIZE` in `kernel/trap.h`) on
 the kernel stack. `struct trap_frame` in `kernel/trap.c` describes the same
 layout:
 
@@ -64,13 +64,21 @@ layout:
 | 8-56   | `t0`-`t6`                  |
 | 64-120 | `a0`-`a7`                  |
 | 128    | `sp` of the interrupted code |
+| 136    | `gp`                       |
+| 144    | `tp`                       |
 
-Only caller-saved registers are saved. `trap_handler` is a normal C function,
-so it preserves `s0`-`s11` itself, and `thread_switch` saves them when it
-switches threads. `gp` and `tp` are not saved because neither the kernel nor
-user programs use them yet, which lets their values leak between processes
-(see [Known issues](known-issues.md)). The frame is 17 registers, rounded up to keep the
-stack 16-byte aligned.
+The frame holds the caller-saved registers, plus `gp` and `tp`.
+`trap_handler` is a normal C function, so it preserves `s0`-`s11` itself, and
+`thread_switch` saves them when it switches threads.
+
+`gp` (global pointer) and `tp` (thread pointer) are neither caller-saved nor
+callee-saved: the ABI fixes them for the whole program, and no function
+touches them. They still hold the user program's values when the trap arrives,
+but if the trap switches threads, the next program overwrites them. Saving
+them in the frame, which lives on this thread's kernel stack, gives every
+program its own copy.
+
+The frame is 19 registers, rounded up to keep the stack 16-byte aligned.
 
 The system call path changes the saved `a0` in the frame, so the program sees
 the return value in `a0` after `sret`.
@@ -120,4 +128,10 @@ returning from a trap:
 3. Set `sepc` to the program's entry point.
 4. Put the current kernel `sp` in `sscratch`. This is the kernel stack for the
    thread's future traps.
-5. Load the user stack pointer and `sret`.
+5. Load the user stack pointer.
+6. Clear `gp` and `tp`, so the program does not start with the values the
+   previous program left in them.
+7. `sret`.
+
+The other registers are not cleared, so the program starts with whatever the
+kernel left in them. See [Known issues](known-issues.md).
