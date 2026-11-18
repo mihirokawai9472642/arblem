@@ -33,14 +33,6 @@ relaxation would break, and the values leak information between processes.
 
 Code: `kernel/trap.S`, `kernel/thread.S`.
 
-### `wait` truncates the PID
-
-`syscall_wait` takes the PID as `unsigned long`, and `thread_wait` takes an
-`int`. A PID with garbage in its upper 32 bits is truncated to a valid one:
-`wait(pid + (1L << 32), &status)` waits for `pid` and succeeds.
-
-Code: `syscall_wait` in `kernel/syscall.c`.
-
 ### The end of RAM is guessed from the DTB address
 
 `kernel_main` passes the device tree address to `page_init` and `vm_init` as the
