@@ -89,3 +89,9 @@ static inline long sys_close(int fd) {
 static inline long sys_dup(int fd) {
     return sys_call(SYSCALL_DUP, fd, 0, 0);
 }
+
+// Create a pipe and store its read and write fds in fds[0] and fds[1].
+// Returns 0, or a negative -ERR_* code.
+static inline long sys_pipe(int fds[2]) {
+    return sys_call(SYSCALL_PIPE, (long)fds, 0, 0);
+}

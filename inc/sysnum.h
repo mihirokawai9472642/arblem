@@ -13,3 +13,4 @@
 #define SYSCALL_POWEROFF 8  // poweroff()
 #define SYSCALL_CLOSE    9  // close(fd)
 #define SYSCALL_DUP      10 // dup(fd)
+#define SYSCALL_PIPE     11 // pipe(fds)
