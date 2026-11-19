@@ -10,6 +10,7 @@
 // its state.
 struct file {
     int ref;
+    void *priv;
     long (*read)(struct file *f, unsigned long buf, unsigned long len);
     long (*write)(struct file *f, unsigned long buf, unsigned long len);
     void (*close)(struct file *f);
