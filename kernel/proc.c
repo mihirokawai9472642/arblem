@@ -30,6 +30,7 @@ extern char user_orphan[], user_orphan_end[];
 extern char user_regcheck[], user_regcheck_end[];
 extern char user_regclobber[], user_regclobber_end[];
 extern char user_pipecheck[], user_pipecheck_end[];
+extern char user_upper[], user_upper_end[];
 extern char user_shell[], user_shell_end[];
 
 // The programs proc_spawn can start, by name.
@@ -41,6 +42,7 @@ static const struct proc_image proc_images[] = {
     {"regcheck", user_regcheck, user_regcheck_end},
     {"regclobber", user_regclobber, user_regclobber_end},
     {"pipecheck", user_pipecheck, user_pipecheck_end},
+    {"upper", user_upper, user_upper_end},
     {"shell", user_shell, user_shell_end},
 };
 
