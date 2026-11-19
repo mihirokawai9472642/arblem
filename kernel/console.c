@@ -52,7 +52,7 @@ static long console_write(struct file *f, unsigned long buf,
         }
     }
 
-    return len;
+    return (long)len;
 }
 
 static struct file console = {console_read, console_write};

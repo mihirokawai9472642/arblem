@@ -79,7 +79,7 @@ long syscall_handle(unsigned long num, unsigned long arg0, unsigned long arg1,
 
     // Does not return.
     if (num == SYSCALL_EXIT) {
-        thread_exit(arg0);
+        thread_exit((int)arg0);
     }
 
     if (num == SYSCALL_READ) {
@@ -87,11 +87,11 @@ long syscall_handle(unsigned long num, unsigned long arg0, unsigned long arg1,
     }
 
     if (num == SYSCALL_TICKS) {
-        return timer_ticks();
+        return (long)timer_ticks();
     }
 
     if (num == SYSCALL_PAGES) {
-        return page_free_count();
+        return (long)page_free_count();
     }
 
     if (num == SYSCALL_SPAWN) {

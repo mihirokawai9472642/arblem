@@ -21,7 +21,7 @@ static inline long sys_call(long num, long arg0, long arg1, long arg2) {
 
 // Write len bytes of buf to fd. Returns the number of bytes written.
 static inline long sys_write(int fd, const char *buf, unsigned long len) {
-    return sys_call(SYSCALL_WRITE, fd, (long)buf, len);
+    return sys_call(SYSCALL_WRITE, fd, (long)buf, (long)len);
 }
 
 // Write one character to stdout.
@@ -41,12 +41,12 @@ static inline void sys_exit(int code) {
 
 // Read up to len bytes from fd into buf. The console returns one byte per call.
 static inline long sys_read(int fd, char *buf, unsigned long len) {
-    return sys_call(SYSCALL_READ, fd, (long)buf, len);
+    return sys_call(SYSCALL_READ, fd, (long)buf, (long)len);
 }
 
 // Read one character from stdin, waiting for it.
 static inline char sys_getc(void) {
-    char c;
+    char c = 0;
 
     sys_read(FD_STDIN, &c, 1);
 
@@ -65,7 +65,7 @@ static inline unsigned long sys_pages(void) {
 
 // Start the program called name (len bytes, no NUL needed). Returns its PID.
 static inline long sys_spawn(const char *name, unsigned long len) {
-    return sys_call(SYSCALL_SPAWN, (long)name, len, 0);
+    return sys_call(SYSCALL_SPAWN, (long)name, (long)len, 0);
 }
 
 // Wait for child pid to exit and store its exit status in *status, unless

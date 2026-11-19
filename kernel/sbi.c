@@ -37,7 +37,7 @@ static struct sbi_ret sbi_call(unsigned long eid, unsigned long fid,
                      : "r"(a2), "r"(a6), "r"(a7)
                      : "memory");
 
-    return (struct sbi_ret){a0, a1};
+    return (struct sbi_ret){(long)a0, a1};
 }
 
 unsigned long sbi_spec_version(void) {

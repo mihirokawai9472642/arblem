@@ -6,7 +6,7 @@
 #include "virt.h"
 
 #define PLIC_PRIORITY(irq)                                                     \
-    ((volatile unsigned int *)(VIRT_PLIC + 4 * (irq))) // Per IRQ, 0 = never
+    ((volatile unsigned int *)(VIRT_PLIC + 4UL * (irq))) // Per IRQ, 0 = never
 #define PLIC_ENABLE                                                            \
     ((volatile unsigned int *)(VIRT_PLIC + 0x2080)) // Context 1 enable bits
 #define PLIC_THRESHOLD                                                         \
