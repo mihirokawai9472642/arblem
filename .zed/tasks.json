@@ -1,0 +1,57 @@
+// Run with "task: spawn" from the command palette. Tasks run in the WSL
+// terminal from the project root and forward the work to the container.
+[
+  {
+    "label": "up",
+    "command": "docker compose up -d --build"
+  },
+  {
+    "label": "build",
+    "command": "docker compose exec dev make",
+    "save": "all"
+  },
+  {
+    // Boot in QEMU. Quit with poweroff in the shell, or Ctrl-A X.
+    "label": "run",
+    "command": "docker compose exec dev make run",
+    "save": "all"
+  },
+  {
+    // Boot in QEMU and run the smoke test.
+    "label": "test",
+    "command": "docker compose exec dev make test",
+    "save": "all"
+  },
+  {
+    // Boot halted and wait for the debugger; then start the "lldb" task.
+    "label": "debug",
+    "command": "docker compose exec dev make debug",
+    "save": "all"
+  },
+  {
+    "label": "lldb",
+    "command": "docker compose exec dev make lldb",
+    "use_new_terminal": true
+  },
+  {
+    "label": "clean",
+    "command": "docker compose exec dev make clean"
+  },
+  {
+    "label": "format",
+    "command": "docker compose exec dev make format",
+    "save": "all"
+  },
+  {
+    "label": "tidy",
+    "command": "docker compose exec dev make tidy",
+    "save": "all"
+  },
+  {
+    // A shell inside the container. Use the WSL terminal for git, since
+    // commit signing and SSH are not available in the container.
+    "label": "shell",
+    "command": "docker compose exec dev bash",
+    "use_new_terminal": true
+  }
+]

@@ -1,0 +1,13 @@
+{
+  "lsp": {
+    "clangd": {
+      // Run clangd inside the container, so it sees the container's compiler
+      // and headers. The container must be running ("up" task) before a C file
+      // is opened.
+      "binary": {
+        "path": "/usr/bin/docker",
+        "arguments": ["compose", "exec", "-T", "dev", "clangd"]
+      }
+    }
+  }
+}
