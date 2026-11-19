@@ -1,0 +1,18 @@
+# Start with "docker compose up -d --build" in the project root, then run
+# commands with "docker compose exec dev <command>".
+services:
+  dev:
+    build: .
+    init: true
+    # Mount the project at the same path as in WSL, so paths reported by
+    # clangd and the compiler are valid on both sides. Run compose from the
+    # project root, since ${PWD} is the current directory.
+    working_dir: ${PWD}
+    volumes:
+      - .:${PWD}
+    # Lets lldb disable address space randomization; without this it cannot
+    # launch programs.
+    security_opt:
+      - seccomp=unconfined
+    # Keep the container running so commands can be executed in it.
+    command: sleep infinity
