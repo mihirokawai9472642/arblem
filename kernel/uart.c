@@ -8,13 +8,15 @@
 
 // Registers, at byte offsets from the base address. RBR and THR share an
 // offset: reads come from RBR, writes go to THR.
-#define UART_RBR ((volatile unsigned char *)(VIRT_UART0 + 0))  // Receive buffer
-#define UART_THR ((volatile unsigned char *)(VIRT_UART0 + 0))  // Transmit holding
-#define UART_IER ((volatile unsigned char *)(VIRT_UART0 + 1))  // Interrupt enable
-#define UART_LSR ((volatile unsigned char *)(VIRT_UART0 + 5))  // Line status
+#define UART_RBR ((volatile unsigned char *)(VIRT_UART0 + 0)) // Receive buffer
+#define UART_THR                                                               \
+    ((volatile unsigned char *)(VIRT_UART0 + 0)) // Transmit holding
+#define UART_IER                                                               \
+    ((volatile unsigned char *)(VIRT_UART0 + 1)) // Interrupt enable
+#define UART_LSR ((volatile unsigned char *)(VIRT_UART0 + 5)) // Line status
 
-#define UART_IER_RDI (1 << 0)  // Interrupt when received data is available
-#define UART_LSR_DR  (1 << 0)  // A received byte is waiting in RBR
+#define UART_IER_RDI (1 << 0) // Interrupt when received data is available
+#define UART_LSR_DR  (1 << 0) // A received byte is waiting in RBR
 
 // Wait channel for threads in uart_getc.
 static char uart_rx_wait;

@@ -23,12 +23,12 @@ void thread_entry(void);
 //   stack != 0, chan != 0            sleeping on chan
 //   stack != 0, chan == &thread_dead exited, waiting to be freed
 struct thread {
-    unsigned long sp;      // Saved kernel sp while switched out
-    void *chan;            // Wait channel, 0 if runnable
-    unsigned long *vm;     // Page table root, 0 for the kernel's
-    void *stack;           // Kernel stack page, 0 if the slot is free
-    int parent;            // ID of the creating thread, -1 if none
-    int exit_code;         // Set by thread_exit
+    unsigned long sp;  // Saved kernel sp while switched out
+    void *chan;        // Wait channel, 0 if runnable
+    unsigned long *vm; // Page table root, 0 for the kernel's
+    void *stack;       // Kernel stack page, 0 if the slot is free
+    int parent;        // ID of the creating thread, -1 if none
+    int exit_code;     // Set by thread_exit
     struct file *files[THREAD_FILE_MAX];
 };
 
@@ -38,8 +38,8 @@ static struct thread thread_table[THREAD_MAX];
 static int thread_current = -1;
 
 // Wait channels. Only their addresses matter.
-static char thread_dead;       // Exited threads sleep here forever
-static char thread_exit_wait;  // thread_wait sleeps here
+static char thread_dead;      // Exited threads sleep here forever
+static char thread_exit_wait; // thread_wait sleeps here
 
 // Runs when nothing else can. Always runnable, so thread_yield always finds a
 // thread. wfi with interrupts enabled stops the hart until the next interrupt.
@@ -47,11 +47,12 @@ static void thread_idle(unsigned long arg) {
     (void)arg;
 
     for (;;) {
-        __asm__ volatile ("wfi");
+        __asm__ volatile("wfi");
     }
 }
 
-int thread_create(void (*entry)(unsigned long), unsigned long arg, unsigned long *vm) {
+int thread_create(void (*entry)(unsigned long), unsigned long arg,
+                  unsigned long *vm) {
     int id = 0;
 
     while (id < THREAD_MAX && thread_table[id].stack != 0) {
@@ -71,11 +72,12 @@ int thread_create(void (*entry)(unsigned long), unsigned long arg, unsigned long
     // Build the frame thread_switch expects at the top of the new stack, so
     // that the first switch "returns" to thread_entry with s0 = entry and
     // s1 = arg. The other saved registers start as zero.
-    unsigned long *frame = (unsigned long *)(stack + PAGE_SIZE - THREAD_FRAME_SIZE);
+    unsigned long *frame =
+        (unsigned long *)(stack + PAGE_SIZE - THREAD_FRAME_SIZE);
 
-    frame[0] = (unsigned long)thread_entry;  // ra
-    frame[1] = (unsigned long)entry;         // s0
-    frame[2] = arg;                          // s1
+    frame[0] = (unsigned long)thread_entry; // ra
+    frame[1] = (unsigned long)entry;        // s0
+    frame[2] = arg;                         // s1
 
     struct thread *t = &thread_table[id];
 
@@ -87,7 +89,8 @@ int thread_create(void (*entry)(unsigned long), unsigned long arg, unsigned long
 
     // Inherit the creator's files. Threads created during boot get none.
     for (int fd = 0; fd < THREAD_FILE_MAX; fd++) {
-        t->files[fd] = thread_current >= 0 ? thread_table[thread_current].files[fd] : 0;
+        t->files[fd] =
+            thread_current >= 0 ? thread_table[thread_current].files[fd] : 0;
     }
 
     return id;
@@ -123,7 +126,8 @@ static void thread_reap(void) {
     for (int i = 0; i < THREAD_MAX; i++) {
         struct thread *t = &thread_table[i];
 
-        if (i != thread_current && t->stack != 0 && t->chan == &thread_dead && t->parent == -1) {
+        if (i != thread_current && t->stack != 0 && t->chan == &thread_dead &&
+            t->parent == -1) {
             thread_free(t);
         }
     }
@@ -142,7 +146,8 @@ void thread_yield(void) {
         if (thread_current == THREAD_MAX) {
             thread_current = 0;
         }
-    } while (thread_table[thread_current].stack == 0 || thread_table[thread_current].chan != 0);
+    } while (thread_table[thread_current].stack == 0 ||
+             thread_table[thread_current].chan != 0);
 
     if (thread_current == prev) {
         return;
@@ -187,7 +192,8 @@ void thread_exit(int code) {
 }
 
 int thread_wait(unsigned long id, int *code) {
-    if (id >= THREAD_MAX || thread_table[id].stack == 0 || thread_table[id].parent != thread_current) {
+    if (id >= THREAD_MAX || thread_table[id].stack == 0 ||
+        thread_table[id].parent != thread_current) {
         return -ERR_CHILD;
     }
 

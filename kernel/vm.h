@@ -12,7 +12,8 @@ unsigned long *vm_create(void);
 
 // Map size bytes at va to physical address pa with PTE flags perm, one 4 KiB
 // page at a time. Returns 0, or -1 when out of memory.
-int vm_map(unsigned long *root, unsigned long va, unsigned long pa, unsigned long size, unsigned long perm);
+int vm_map(unsigned long *root, unsigned long va, unsigned long pa,
+           unsigned long size, unsigned long perm);
 
 // Make root the active page table. 0 selects the kernel page table.
 void vm_switch(unsigned long *root);

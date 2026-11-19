@@ -30,7 +30,8 @@ static long console_read(struct file *f, unsigned long buf, unsigned long len) {
 
 // Copy the user buffer through a small kernel buffer and send it to the UART.
 // On a bad address, chunks before it have already been written.
-static long console_write(struct file *f, unsigned long buf, unsigned long len) {
+static long console_write(struct file *f, unsigned long buf,
+                          unsigned long len) {
     char kbuf[CONSOLE_BUF_SIZE];
 
     (void)f;

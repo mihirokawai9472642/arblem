@@ -14,7 +14,8 @@ struct file;
 // Create a thread that will run entry(arg) on its own kernel stack, using the
 // page table vm (0 = the kernel's). It inherits the current thread's files.
 // Returns the thread ID, or -ERR_AGAIN or -ERR_NOMEM.
-int thread_create(void (*entry)(unsigned long), unsigned long arg, unsigned long *vm);
+int thread_create(void (*entry)(unsigned long), unsigned long arg,
+                  unsigned long *vm);
 
 // Create the idle thread and start running thread 0. Does not return.
 void thread_start(void);

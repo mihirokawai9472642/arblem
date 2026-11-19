@@ -16,6 +16,6 @@ void panic(const char *msg) {
 
     // If the shutdown fails, stop here.
     for (;;) {
-        __asm__ volatile ("wfi");
+        __asm__ volatile("wfi");
     }
 }

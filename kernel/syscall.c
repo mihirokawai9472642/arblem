@@ -16,7 +16,8 @@
 // Size of the kernel buffer for a program name, including the NUL.
 #define SYSCALL_NAME_MAX 16
 
-static long syscall_write(unsigned long fd, unsigned long buf, unsigned long len) {
+static long syscall_write(unsigned long fd, unsigned long buf,
+                          unsigned long len) {
     struct file *f = thread_file(fd);
 
     if (f == 0 || f->write == 0) {
@@ -26,7 +27,8 @@ static long syscall_write(unsigned long fd, unsigned long buf, unsigned long len
     return f->write(f, buf, len);
 }
 
-static long syscall_read(unsigned long fd, unsigned long buf, unsigned long len) {
+static long syscall_read(unsigned long fd, unsigned long buf,
+                         unsigned long len) {
     struct file *f = thread_file(fd);
 
     if (f == 0 || f->read == 0) {
@@ -69,7 +71,8 @@ static long syscall_wait(unsigned long pid, unsigned long status) {
     return 0;
 }
 
-long syscall_handle(unsigned long num, unsigned long arg0, unsigned long arg1, unsigned long arg2) {
+long syscall_handle(unsigned long num, unsigned long arg0, unsigned long arg1,
+                    unsigned long arg2) {
     if (num == SYSCALL_WRITE) {
         return syscall_write(arg0, arg1, arg2);
     }

@@ -10,7 +10,8 @@ int elf_check(const char *image, unsigned long size) {
         return -1;
     }
 
-    if (eh->ident[0] != 0x7f || eh->ident[1] != 'E' || eh->ident[2] != 'L' || eh->ident[3] != 'F') {
+    if (eh->ident[0] != 0x7f || eh->ident[1] != 'E' || eh->ident[2] != 'L' ||
+        eh->ident[3] != 'F') {
         return -1;
     }
 
@@ -29,7 +30,8 @@ int elf_check(const char *image, unsigned long size) {
     }
 
     // Written so that no addition can overflow.
-    if (eh->phoff > size || eh->phnum > (size - eh->phoff) / sizeof(struct elf_phdr)) {
+    if (eh->phoff > size ||
+        eh->phnum > (size - eh->phoff) / sizeof(struct elf_phdr)) {
         return -1;
     }
 
@@ -40,7 +42,8 @@ int elf_check(const char *image, unsigned long size) {
             continue;
         }
 
-        if (ph[i].offset > size || ph[i].filesz > size - ph[i].offset || ph[i].filesz > ph[i].memsz) {
+        if (ph[i].offset > size || ph[i].filesz > size - ph[i].offset ||
+            ph[i].filesz > ph[i].memsz) {
             return -1;
         }
     }
