@@ -51,7 +51,8 @@ static void proc_entry(unsigned long entry) {
 // Allocate a zeroed page and map it at va. Returns the page's kernel address,
 // or 0 when out of memory. On failure nothing stays allocated except page
 // tables, which vm_free releases with the rest of the address space.
-static char *proc_map_page(unsigned long *vm, unsigned long va, unsigned long perm) {
+static char *proc_map_page(unsigned long *vm, unsigned long va,
+                           unsigned long perm) {
     char *page = page_alloc();
 
     if (page == 0) {
@@ -89,10 +90,12 @@ static unsigned long proc_perm(unsigned int flags) {
 // Map and fill one PT_LOAD segment. *next is the first address the segment may
 // use; it is advanced past the segment, so segments must come in address order
 // and never share a page. Bytes past filesz stay zero (.bss).
-static int proc_load(unsigned long *vm, const char *image, const struct elf_phdr *ph, unsigned long *next) {
+static int proc_load(unsigned long *vm, const char *image,
+                     const struct elf_phdr *ph, unsigned long *next) {
     unsigned long end = PROC_STACK_TOP - PAGE_SIZE;
 
-    if (ph->vaddr % PAGE_SIZE != 0 || ph->vaddr < *next || ph->vaddr > end || ph->memsz > end - ph->vaddr) {
+    if (ph->vaddr % PAGE_SIZE != 0 || ph->vaddr < *next || ph->vaddr > end ||
+        ph->memsz > end - ph->vaddr) {
         return -ERR_NOEXEC;
     }
 
@@ -150,7 +153,8 @@ static int proc_create(const char *image, unsigned long size) {
         }
     }
 
-    if (proc_map_page(vm, PROC_STACK_TOP - PAGE_SIZE, PTE_R | PTE_W | PTE_U) == 0) {
+    if (proc_map_page(vm, PROC_STACK_TOP - PAGE_SIZE, PTE_R | PTE_W | PTE_U) ==
+        0) {
         err = -ERR_NOMEM;
         goto fail;
     }
@@ -171,9 +175,11 @@ fail:
 }
 
 int proc_spawn(const char *name) {
-    for (unsigned long i = 0; i < sizeof(proc_images) / sizeof(proc_images[0]); i++) {
+    for (unsigned long i = 0; i < sizeof(proc_images) / sizeof(proc_images[0]);
+         i++) {
         if (str_equal(name, proc_images[i].name)) {
-            return proc_create(proc_images[i].start, proc_images[i].end - proc_images[i].start);
+            return proc_create(proc_images[i].start,
+                               proc_images[i].end - proc_images[i].start);
         }
     }
 

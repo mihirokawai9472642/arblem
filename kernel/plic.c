@@ -5,10 +5,15 @@
 #include "riscv.h"
 #include "virt.h"
 
-#define PLIC_PRIORITY(irq) ((volatile unsigned int *)(VIRT_PLIC + 4 * (irq)))  // Per IRQ, 0 = never
-#define PLIC_ENABLE        ((volatile unsigned int *)(VIRT_PLIC + 0x2080))    // Context 1 enable bits
-#define PLIC_THRESHOLD     ((volatile unsigned int *)(VIRT_PLIC + 0x201000))  // Context 1 threshold
-#define PLIC_CLAIM         ((volatile unsigned int *)(VIRT_PLIC + 0x201004))  // Context 1 claim/complete
+#define PLIC_PRIORITY(irq)                                                     \
+    ((volatile unsigned int *)(VIRT_PLIC + 4UL * (irq))) // Per IRQ, 0 = never
+#define PLIC_ENABLE                                                            \
+    ((volatile unsigned int *)(VIRT_PLIC + 0x2080)) // Context 1 enable bits
+#define PLIC_THRESHOLD                                                         \
+    ((volatile unsigned int *)(VIRT_PLIC + 0x201000)) // Context 1 threshold
+#define PLIC_CLAIM                                                             \
+    ((volatile unsigned int *)(VIRT_PLIC +                                     \
+                               0x201004)) // Context 1 claim/complete
 
 void plic_init(void) {
     // Deliver every IRQ with a priority above 0.

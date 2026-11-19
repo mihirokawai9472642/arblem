@@ -1,58 +1,93 @@
 # Build the kernel and user programs into build/, mirroring the source tree
 # (kernel/trap.S -> build/kernel/trap.S.o). See docs/build-and-test.md.
 
+# Target: 64-bit RISC-V, bare metal. medany lets code and data be linked at
+# any address (0x80200000 for the kernel, 0x40000000 for user programs).
+TARGET  := --target=riscv64-unknown-elf -march=rv64gc -mabi=lp64d -mcmodel=medany
+
+BUILD   := build
+KERNEL  := $(BUILD)/kernel.elf
+
 CC      := clang
 LD      := ld.lld
 QEMU    := qemu-system-riscv64
 
-# Bare-metal RV64 code that can be linked at any address (medany), without a
-# hosted C library (freestanding). -MMD -MP write .d files for header changes.
-CFLAGS    := --target=riscv64-unknown-elf -mcmodel=medany -ffreestanding -Wall -Wextra -Iinc -MMD -MP
+# -ffreestanding: no hosted C library; only the compiler's own headers are
+# available. -g emits debug info for LLDB.
+CFLAGS    := $(TARGET) -std=c17 -Wall -Wextra -g -ffreestanding -Iinc
+ASFLAGS   := $(TARGET) -g -Iinc
 
 # One hart on the virt machine, OpenSBI as firmware, console on stdio.
-QEMUFLAGS := -machine virt -nographic -bios default -kernel build/kernel.elf
+QEMUFLAGS := -machine virt -nographic -bios default
 
 # Programs embedded in the kernel. Each also needs an entry in kernel/user.S
 # and kernel/proc.c; see docs/user.md.
 USER_PROGS := hello count fault orphan regcheck regclobber shell
 
-KERNEL_OBJS := $(patsubst %,build/%.o,$(wildcard kernel/*.S kernel/*.c))
-LIB_OBJS    := $(patsubst %,build/%.o,$(wildcard lib/*.c))
-USER_OBJS   := $(patsubst %,build/%.o,$(wildcard user/*.c))
-USER_ELFS   := $(patsubst %,build/user/%.elf,$(USER_PROGS))
+KERNEL_OBJS := $(patsubst %,$(BUILD)/%.o,$(wildcard kernel/*.S kernel/*.c))
+LIB_OBJS    := $(patsubst %,$(BUILD)/%.o,$(wildcard lib/*.c))
+USER_OBJS   := $(patsubst %,$(BUILD)/%.o,$(wildcard user/*.c))
+ALL_OBJS    := $(KERNEL_OBJS) $(LIB_OBJS) $(USER_OBJS)
+USER_ELFS   := $(patsubst %,$(BUILD)/user/%.elf,$(USER_PROGS))
+
+C_SOURCES := $(wildcard kernel/*.c lib/*.c user/*.c)
+C_HEADERS := $(wildcard kernel/*.h inc/*.h user/*.h)
 
 # Only the rules below apply; make's implicit rules would get in the way.
 MAKEFLAGS += --no-builtin-rules
 
-.PHONY: all run test clean
+.PHONY: all run test debug lldb clean format tidy
 
-all: build/kernel.elf
+all: $(KERNEL) $(BUILD)/compile_commands.json
 
-run: all
-	$(QEMU) $(QEMUFLAGS)
+run: $(KERNEL)
+	$(QEMU) $(QEMUFLAGS) -kernel $(KERNEL)
 
-test: all
-	sh test/smoke.sh $(QEMU) $(QEMUFLAGS)
+test: $(KERNEL)
+	sh test/smoke.sh $(QEMU) $(QEMUFLAGS) -kernel $(KERNEL)
+
+# Boot halted at the first instruction, waiting for a debugger on port 1234.
+# Attach with "make lldb" from another terminal.
+debug: $(KERNEL)
+	$(QEMU) $(QEMUFLAGS) -kernel $(KERNEL) -s -S
+
+lldb: $(KERNEL)
+	lldb $(KERNEL) -o 'gdb-remote 1234'
 
 clean:
-	rm -rf build
+	rm -rf $(BUILD)
 
-build/%.c.o: %.c
+# Formatting and static analysis follow .clang-format and .clang-tidy.
+# Assembly files are not covered.
+format:
+	clang-format -i $(C_SOURCES) $(C_HEADERS)
+
+tidy: $(BUILD)/compile_commands.json
+	clang-tidy -p $(BUILD) $(C_SOURCES)
+
+# -MMD -MP: record header dependencies, so editing a header rebuilds its users.
+# -MJ: write a compilation database entry for clangd next to each object.
+$(BUILD)/%.c.o: %.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -MMD -MP -MJ $@.json -c $< -o $@
 
-build/%.S.o: %.S
+$(BUILD)/%.S.o: %.S
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(ASFLAGS) -MMD -MP -MJ $@.json -c $< -o $@
 
-build/kernel.elf: kernel/linker.ld $(KERNEL_OBJS) $(LIB_OBJS)
+# Join the entries into build/compile_commands.json, which clangd finds on its
+# own. The compiler flags are written only once, in this Makefile.
+$(BUILD)/compile_commands.json: $(ALL_OBJS)
+	sed -e '1s/^/[\n/' -e '$$s/,$$/\n]/' $(ALL_OBJS:=.json) > $@
+
+$(KERNEL): kernel/linker.ld $(KERNEL_OBJS) $(LIB_OBJS)
 	$(LD) -T kernel/linker.ld -o $@ $(KERNEL_OBJS) $(LIB_OBJS)
 
 # kernel/user.S pulls the user ELF files in with .incbin.
-build/kernel/user.S.o: $(USER_ELFS)
+$(BUILD)/kernel/user.S.o: $(USER_ELFS)
 
 # Each program: the shared entry point, its own object, and lib/.
-$(USER_ELFS): build/user/%.elf: user/linker.ld build/user/start.c.o build/user/%.c.o $(LIB_OBJS)
+$(USER_ELFS): $(BUILD)/user/%.elf: user/linker.ld $(BUILD)/user/start.c.o $(BUILD)/user/%.c.o $(LIB_OBJS)
 	$(LD) -T user/linker.ld -o $@ $(filter %.o,$^)
 
--include $(KERNEL_OBJS:.o=.d) $(LIB_OBJS:.o=.d) $(USER_OBJS:.o=.d)
+-include $(ALL_OBJS:.o=.d)

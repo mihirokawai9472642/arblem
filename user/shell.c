@@ -140,7 +140,7 @@ static void shell_exec(const char *line) {
         return;
     }
 
-    int status;
+    int status = 0;
 
     if (sys_wait(pid, &status) == 0 && status != 0) {
         sys_puts("exit: ");

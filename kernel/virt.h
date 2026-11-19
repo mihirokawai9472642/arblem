@@ -8,4 +8,4 @@
 #define VIRT_UART0         0x10000000UL
 #define VIRT_UART0_SIZE    0x1000UL
 #define VIRT_UART0_IRQ     10
-#define VIRT_TIMEBASE_FREQ 10000000UL  // Frequency of the time CSR, in Hz
+#define VIRT_TIMEBASE_FREQ 10000000UL // Frequency of the time CSR, in Hz

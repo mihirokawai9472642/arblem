@@ -1,0 +1,14 @@
+# Used by "make tidy", and by clangd for warnings in the editor.
+#
+# clang-analyzer-*: path-sensitive bug finding (null dereference, leaks, ...)
+# bugprone-*:       common mistakes
+# Disabled:
+#   bugprone-easily-swappable-parameters: flags most functions taking two
+#   parameters of the same type.
+#   bugprone-reserved-identifier: flags names such as __bss_start, which
+#   linker scripts and kernels commonly use.
+Checks: >
+  clang-analyzer-*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-reserved-identifier

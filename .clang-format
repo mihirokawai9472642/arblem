@@ -1,0 +1,18 @@
+# Based on the LLVM style, adjusted for low-level code.
+BasedOnStyle: LLVM
+IndentWidth: 4
+
+# Header order can matter in freestanding code; keep it as written.
+SortIncludes: Never
+
+# Keep ASCII diagrams and register layouts in comments intact.
+ReflowComments: false
+
+# One statement per line, so breakpoints and diffs map to single lines.
+AllowShortFunctionsOnASingleLine: None
+
+# Line up register and bit-field definitions.
+AlignConsecutiveMacros: Consecutive
+AlignConsecutiveBitFields: Consecutive
+
+InsertNewlineAtEOF: true

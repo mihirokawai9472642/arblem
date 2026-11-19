@@ -11,8 +11,8 @@ int main(void) {
     unsigned long gp;
     unsigned long tp;
 
-    __asm__ volatile ("mv gp, %0" : : "r"(REGCHECK_GP));
-    __asm__ volatile ("mv tp, %0" : : "r"(REGCHECK_TP));
+    __asm__ volatile("mv gp, %0" : : "r"(REGCHECK_GP));
+    __asm__ volatile("mv tp, %0" : : "r"(REGCHECK_TP));
 
     long pid = sys_spawn("regclobber", str_len("regclobber"));
 
@@ -26,8 +26,8 @@ int main(void) {
     for (volatile unsigned long i = 0; i < 30000000; i++) {
     }
 
-    __asm__ volatile ("mv %0, gp" : "=r"(gp));
-    __asm__ volatile ("mv %0, tp" : "=r"(tp));
+    __asm__ volatile("mv %0, gp" : "=r"(gp));
+    __asm__ volatile("mv %0, tp" : "=r"(tp));
 
     int status = -1;
 
