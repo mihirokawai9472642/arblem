@@ -2,8 +2,8 @@
 
 These pages describe how Arblem works today: what each part of the kernel does,
 the conventions the parts rely on, and the limits of the current design. The
-top-level [Readme](../Readme.md) covers installing the tools and running the
-system.
+top-level [README](../README.md) covers starting the development container and
+running the system.
 
 ## Reading order
 
