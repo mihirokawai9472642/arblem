@@ -81,7 +81,7 @@ exec 3> "$INPUT"
 wait_for '^> '
 printf 'pages\rhello\rpages\r' >&3
 printf 'orphan\rorphan\rorphan\rorphan\rorphan\rorphan\rorphan\r' >&3
-printf 'regcheck\rcount\rpages\rfault\rpages\rfoo\rpages\rpoweroff\r' >&3
+printf 'regcheck\rpipecheck\rpages\rcount\rpages\rfault\rpages\rfoo\rpages\rpoweroff\r' >&3
 wait_exit
 status=$?
 exec 3>&-
@@ -96,6 +96,7 @@ check count   'count: 4'
 check fault   'exit: -1'
 check unknown 'Unknown command'
 check regs    'regs: ok'
+check pipe    'pipe: ok'
 
 # hello runs once by itself and once from each of the 7 orphans. Without
 # orphan reaping, the thread table fills up after 5 orphans.
@@ -106,8 +107,8 @@ else
     failed=1
 fi
 
-# Five `pages` outputs, all the same: no program leaked memory.
-if [ "$(grep -c '^0x' "$LOG")" -eq 5 ] && [ "$(grep '^0x' "$LOG" | sort -u | wc -l)" -eq 1 ]; then
+# Six `pages` outputs, all the same: no program leaked memory.
+if [ "$(grep -c '^0x' "$LOG")" -eq 6 ] && [ "$(grep '^0x' "$LOG" | sort -u | wc -l)" -eq 1 ]; then
     echo "ok   pages"
 else
     echo "FAIL pages"
