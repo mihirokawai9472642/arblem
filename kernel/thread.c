@@ -237,3 +237,35 @@ struct file *thread_file(unsigned long fd) {
 void thread_set_file(int id, unsigned long fd, struct file *f) {
     thread_table[id].files[fd] = f;
 }
+
+int thread_alloc_fd(struct file *f) {
+    struct thread *t = &thread_table[thread_current];
+
+    for (int fd = 0; fd < THREAD_FILE_MAX; fd++) {
+        if (t->files[fd] == 0) {
+            t->files[fd] = f;
+
+            return fd;
+        }
+    }
+
+    return -ERR_MFILE;
+}
+
+int thread_close_fd(unsigned long fd) {
+    if (fd >= THREAD_FILE_MAX) {
+        return -ERR_BADF;
+    }
+
+    struct thread *t = &thread_table[thread_current];
+    struct file *f = t->files[fd];
+
+    if (f == 0) {
+        return -ERR_BADF;
+    }
+
+    t->files[fd] = 0;
+    file_close(f);
+
+    return 0;
+}

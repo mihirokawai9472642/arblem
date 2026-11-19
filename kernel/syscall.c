@@ -38,6 +38,28 @@ static long syscall_read(unsigned long fd, unsigned long buf,
     return f->read(f, buf, len);
 }
 
+static long syscall_close(unsigned long fd) {
+    return thread_close_fd(fd);
+}
+
+static long syscall_dup(unsigned long fd) {
+    struct file *f = thread_file(fd);
+
+    if (f == 0) {
+        return -ERR_BADF;
+    }
+
+    int newfd = thread_alloc_fd(f);
+
+    if (newfd < 0) {
+        return newfd;
+    }
+
+    file_ref(f);
+
+    return newfd;
+}
+
 // name is not NUL-terminated in user memory; len gives its length.
 static long syscall_spawn(unsigned long name, unsigned long len) {
     char kname[SYSCALL_NAME_MAX];
@@ -106,6 +128,14 @@ long syscall_handle(unsigned long num, unsigned long arg0, unsigned long arg1,
     // -ERR_NOSYS.
     if (num == SYSCALL_POWEROFF) {
         sbi_shutdown(SBI_SRST_REASON_NONE);
+    }
+
+    if (num == SYSCALL_CLOSE) {
+        return syscall_close(arg0);
+    }
+
+    if (num == SYSCALL_DUP) {
+        return syscall_dup(arg0);
     }
 
     return -ERR_NOSYS;

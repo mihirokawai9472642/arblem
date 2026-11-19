@@ -11,4 +11,5 @@
 #define ERR_AGAIN  11 // Thread table full
 #define ERR_NOMEM  12 // Out of memory
 #define ERR_FAULT  14 // Bad user address
+#define ERR_MFILE  24 // Too many open files
 #define ERR_NOSYS  38 // Unknown system call
