@@ -102,3 +102,9 @@ static inline long sys_dup(int fd) {
 static inline long sys_pipe(int fds[2]) {
     return sys_call(SYSCALL_PIPE, (long)fds, 0, 0);
 }
+
+// Grow or shrink the user heap by delta bytes. Returns the previous program
+// break (a user address), or -ERR_NOMEM on failure.
+static inline long sys_sbrk(long delta) {
+    return sys_call(SYSCALL_SBRK, delta, 0, 0);
+}

@@ -60,4 +60,12 @@ void thread_set_start(int id, unsigned long sp, unsigned long argc,
 // Read the current thread's initial U-mode stack pointer and argc/argv.
 void thread_get_start(unsigned long *sp, unsigned long *argc,
                       unsigned long *argv);
+
+// Set the initial heap base (and break) for thread id.
+void thread_set_heap(int id, unsigned long base);
+
+// Move the current thread's program break by delta bytes. Growing only moves
+// the break (pages are allocated on demand); shrinking unmaps and frees pages
+// above the new break. Returns the previous break, or -ERR_NOMEM on failure.
+long thread_sbrk(long delta);
 #endif

@@ -15,6 +15,10 @@ unsigned long *vm_create(void);
 int vm_map(unsigned long *root, unsigned long va, unsigned long pa,
            unsigned long size, unsigned long perm);
 
+// Unmap the single 4 KiB page at va in root, free its physical page, and flush
+// the TLB. Does nothing if va is not mapped.
+void vm_unmap(unsigned long *root, unsigned long va);
+
 // Make root the active page table. 0 selects the kernel page table.
 void vm_switch(unsigned long *root);
 

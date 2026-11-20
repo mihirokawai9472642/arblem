@@ -10,6 +10,7 @@
 #include "file.h"
 #include "page.h"
 #include "panic.h"
+#include "proc.h"
 #include "vm.h"
 
 // Slots in the thread table, including the idle thread.
@@ -33,6 +34,8 @@ struct thread {
     unsigned long user_sp;   // Initial U-mode sp
     unsigned long user_argc; // Initial U-mode a0 (argc)
     unsigned long user_argv; // Initial U-mode a1 (argv)
+    unsigned long heap_base; // First byte of the user heap (page aligned)
+    unsigned long heap_end;  // Current program break (sbrk)
     struct file *files[THREAD_FILE_MAX];
 };
 
@@ -93,6 +96,8 @@ int thread_create(void (*entry)(unsigned long), unsigned long arg,
     t->user_sp = 0;
     t->user_argc = 0;
     t->user_argv = 0;
+    t->heap_base = 0;
+    t->heap_end = 0;
 
     // Inherit the creator's files. Threads created during boot get none.
     for (int fd = 0; fd < THREAD_FILE_MAX; fd++) {
@@ -292,4 +297,56 @@ void thread_get_start(unsigned long *sp, unsigned long *argc,
     *sp = t->user_sp;
     *argc = t->user_argc;
     *argv = t->user_argv;
+}
+
+// Round addr up to the next PAGE_SIZE boundary.
+static unsigned long page_round_up(unsigned long addr) {
+    return (addr + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1UL);
+}
+
+void thread_set_heap(int id, unsigned long base) {
+    struct thread *t = &thread_table[id];
+
+    t->heap_base = base;
+    t->heap_end = base;
+}
+
+long thread_sbrk(long delta) {
+    struct thread *t = &thread_table[thread_current];
+    unsigned long old_end = t->heap_end;
+
+    if (delta == 0) {
+        return (long)old_end;
+    }
+
+    if (delta > 0) {
+        unsigned long inc = (unsigned long)delta;
+
+        if (inc > PROC_HEAP_LIMIT - old_end) {
+            return -ERR_NOMEM;
+        }
+
+        t->heap_end = old_end + inc;
+
+        return (long)old_end;
+    }
+
+    // delta < 0: negate in unsigned arithmetic to avoid UB on LONG_MIN.
+    unsigned long dec = -(unsigned long)delta;
+
+    if (dec > old_end - t->heap_base) {
+        return -ERR_NOMEM;
+    }
+
+    unsigned long new_end = old_end - dec;
+    unsigned long old_top = page_round_up(old_end);
+    unsigned long new_top = page_round_up(new_end);
+
+    for (unsigned long va = new_top; va < old_top; va += PAGE_SIZE) {
+        vm_unmap(t->vm, va);
+    }
+
+    t->heap_end = new_end;
+
+    return (long)old_end;
 }

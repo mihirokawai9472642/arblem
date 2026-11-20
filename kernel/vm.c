@@ -76,6 +76,18 @@ int vm_map(unsigned long *root, unsigned long va, unsigned long pa,
     return 0;
 }
 
+void vm_unmap(unsigned long *root, unsigned long va) {
+    unsigned long *pte = vm_walk(root, va, 0);
+
+    if (pte == 0 || (*pte & PTE_V) == 0) {
+        return;
+    }
+
+    page_free((void *)PTE_TO_PA(*pte));
+    *pte = 0;
+    __asm__ volatile("sfence.vma" : : : "memory");
+}
+
 static void vm_map_identity(unsigned long start, unsigned long end,
                             unsigned long perm) {
     if (start % PAGE_SIZE != 0 || end % PAGE_SIZE != 0) {

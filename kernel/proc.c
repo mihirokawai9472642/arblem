@@ -11,11 +11,6 @@
 #include "trap.h"
 #include "vm.h"
 
-// User programs live in [PROC_BASE, PROC_STACK_TOP), which is exactly one
-// top-level page table entry (see vm_create). The top page is the stack.
-#define PROC_BASE      0x40000000UL
-#define PROC_STACK_TOP 0x80000000UL
-
 // An ELF file embedded in the kernel image by user.S.
 struct proc_image {
     const char *name;
@@ -103,7 +98,7 @@ static unsigned long proc_perm(unsigned int flags) {
 // and never share a page. Bytes past filesz stay zero (.bss).
 static int proc_load(unsigned long *vm, const char *image,
                      const struct elf_phdr *ph, unsigned long *next) {
-    unsigned long end = PROC_STACK_TOP - PAGE_SIZE;
+    unsigned long end = PROC_HEAP_LIMIT;
 
     if (ph->vaddr % PAGE_SIZE != 0 || ph->vaddr < *next || ph->vaddr > end ||
         ph->memsz > end - ph->vaddr) {
@@ -244,6 +239,7 @@ static int proc_create(const char *image, unsigned long size, int argc,
     }
 
     thread_set_start(id, user_sp, (unsigned long)argc, user_argv);
+    thread_set_heap(id, next);
 
     return id;
 

@@ -14,3 +14,4 @@
 #define SYSCALL_CLOSE    9  // close(fd)
 #define SYSCALL_DUP      10 // dup(fd)
 #define SYSCALL_PIPE     11 // pipe(fds)
+#define SYSCALL_SBRK     12 // sbrk(delta)

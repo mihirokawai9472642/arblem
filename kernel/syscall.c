@@ -224,5 +224,9 @@ long syscall_handle(unsigned long num, unsigned long arg0, unsigned long arg1,
         return syscall_pipe(arg0);
     }
 
+    if (num == SYSCALL_SBRK) {
+        return thread_sbrk((long)arg0);
+    }
+
     return -ERR_NOSYS;
 }
