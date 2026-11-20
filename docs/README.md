@@ -34,7 +34,7 @@ the ones before it.
 | Threads         | `kernel/thread.S`, `kernel/thread.c`                                      |
 | Processes       | `kernel/proc.c`, `kernel/elf.c`, `kernel/user.S`                          |
 | System calls    | `kernel/syscall.c`, `inc/sysnum.h`, `inc/error.h`, `user/sys.h`           |
-| Files           | `kernel/file.h`, `kernel/console.c`, `inc/fd.h`                           |
+| Files           | `kernel/file.h`, `kernel/file.c`, `kernel/console.c`, `kernel/pipe.c`, `inc/fd.h` |
 | Devices         | `kernel/uart.c`, `kernel/plic.c`, `kernel/timer.c`, `kernel/virt.h`       |
 | Firmware calls  | `kernel/sbi.c`, `kernel/kprintf.c`, `kernel/panic.c`                      |
 | User programs   | `user/*.c`, `user/linker.ld`                                              |

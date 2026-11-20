@@ -28,6 +28,8 @@ When `main` runs, the stack pointer is `0x80000000` and the stack is one page
 | `orphan` | Spawns `hello` and exits without waiting for it, leaving `hello` an orphan; the smoke test uses it to check that orphans are freed |
 | `regcheck` | Sets `gp` and `tp`, starts `regclobber`, and prints `regs: ok` if its own values survived and `regclobber` started with them cleared; used by the smoke test |
 | `regclobber` | Helper for `regcheck`: keeps overwriting `gp` and `tp`, and exits with status 1 if they did not start cleared |
+| `pipecheck` | Checks `close`, `dup`, and `pipe` (errors, rollback, wrap-around, EOF, child stdout) and prints `pipe: ok`; used by the smoke test |
+| `upper` | Copies stdin to stdout, converting ASCII lowercase letters to uppercase |
 
 ## The shell
 
@@ -42,6 +44,7 @@ at most 63 characters.
 | `pages`    | Print the number of free physical pages in hex              |
 | `ticks`    | Print the timer tick count in hex                           |
 | `poweroff` | Power off the machine                                       |
+| `cmd1 \| cmd2` | Connect `cmd1`'s stdout to `cmd2`'s stdin with a pipe   |
 | anything else | Spawn the program with that name and wait for it         |
 
 If a program exits with a non-zero status, the shell prints `exit: <status>`.

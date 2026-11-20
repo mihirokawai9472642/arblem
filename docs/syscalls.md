@@ -31,6 +31,8 @@ numbers match Linux, which makes them easy to look up.
 | `ERR_AGAIN`  | 11    | Thread table is full                            |
 | `ERR_NOMEM`  | 12    | Out of physical pages                           |
 | `ERR_FAULT`  | 14    | A pointer argument is not valid user memory     |
+| `ERR_MFILE`  | 24    | Thread's file descriptor table is full          |
+| `ERR_PIPE`   | 32    | Pipe write with no reader left                  |
 | `ERR_NOSYS`  | 38    | Unknown system call number                      |
 
 ## Reference
@@ -111,6 +113,41 @@ Asks OpenSBI to shut the machine down. Does not return if the shutdown works.
 If OpenSBI refuses, the call falls through and returns `-ERR_NOSYS`.
 
 Wrapper: `sys_poweroff`.
+
+### 9 `close(fd)`
+
+Closes file descriptor `fd` and drops its reference to the underlying
+`struct file`. Returns 0.
+
+- `-ERR_BADF` if `fd` is out of range or unused.
+
+Wrapper: `sys_close`.
+
+### 10 `dup(fd)`
+
+Installs a new reference to the file at `fd` into the lowest free file
+descriptor and returns the new descriptor.
+
+- `-ERR_BADF` if `fd` is out of range or unused.
+- `-ERR_MFILE` if all `THREAD_FILE_MAX` descriptors are in use.
+
+Wrapper: `sys_dup`.
+
+### 11 `pipe(fds)`
+
+Creates a unidirectional in-memory pipe (512-byte ring buffer in one physical
+page) and writes the read descriptor to `fds[0]` and the write descriptor to
+`fds[1]`. Returns 0.
+
+- Reading blocks while the buffer is empty and a write end is open, then returns
+  available bytes (or 0 on EOF once all write ends close).
+- Writing blocks while the buffer is full and a read end is open, and returns
+  `-ERR_PIPE` once all read ends close.
+- `-ERR_NOMEM` if no physical page is free.
+- `-ERR_MFILE` if fewer than two file descriptors are free.
+- `-ERR_FAULT` if `fds` is not writable user memory.
+
+Wrapper: `sys_pipe`.
 
 ## Adding a system call
 

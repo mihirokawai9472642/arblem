@@ -102,11 +102,13 @@ while (!condition) {
 }
 ```
 
-| Channel           | Sleeps on it                     | Woken by                    |
-|-------------------|----------------------------------|-----------------------------|
-| `&uart_rx_wait`   | A thread reading the console     | The UART receive interrupt  |
-| `&thread_exit_wait` | A parent in `thread_wait`      | Any thread calling `thread_exit` |
-| `&thread_dead`    | An exited thread, forever        | Nobody                      |
+| Channel             | Sleeps on it                     | Woken by                                     |
+|---------------------|----------------------------------|----------------------------------------------|
+| `&uart_rx_wait`     | A thread reading the console     | The UART receive interrupt                   |
+| `&p->read_end`      | A thread reading an empty pipe   | `pipe_write` or closing the last write end   |
+| `&p->write_end`     | A thread writing a full pipe     | `pipe_read` or closing the last read end     |
+| `&thread_exit_wait` | A parent in `thread_wait`        | Any thread calling `thread_exit`             |
+| `&thread_dead`      | An exited thread, forever        | Nobody                                       |
 
 Because the kernel runs with interrupts off, nothing can happen between
 checking the condition and calling `thread_sleep`. A wakeup that arrives in
@@ -117,9 +119,11 @@ that gap cannot be lost.
 `thread_exit(code)`:
 
 1. Stores the exit code.
-2. Makes every child an orphan (`parent = -1`).
-3. Wakes all threads in `thread_wait`.
-4. Sleeps on `&thread_dead` and never runs again.
+2. Closes every open file descriptor with `file_close`, so a parent reading a
+   pipe sees EOF before calling `thread_wait`.
+3. Makes every child an orphan (`parent = -1`).
+4. Wakes all threads in `thread_wait`.
+5. Sleeps on `&thread_dead` and never runs again.
 
 The thread keeps its slot, stack and page table, so it is a *zombie* until
 someone frees it. It cannot free them itself, because it is still running on
@@ -154,10 +158,14 @@ never the active one there, so freeing needs no lock and no extra TLB flush.
 
 Each thread has `THREAD_FILE_MAX` (8) file pointers, indexed by file
 descriptor. `thread_file(fd)` returns the current thread's file for `fd`, or 0
-if `fd` is out of range or unused. `thread_set_file(id, fd, f)` lets the kernel
-install a file in another thread; boot uses it to give the shell the console.
+if `fd` is out of range or unused. `thread_set_file(id, fd, f)` installs a file
+in another thread (used at boot for the shell). `thread_alloc_fd(f)` installs
+`f` in the lowest free descriptor of the current thread, and
+`thread_close_fd(fd)` removes it and drops its reference.
 
-A `struct file` (`kernel/file.h`) is a pair of function pointers, `read` and
-`write`, which take a *user* buffer address. The only file today is the
-console (`kernel/console.c`). Files have no reference count and there is no
-`close`, because the console is a static object that is never freed.
+A `struct file` (`kernel/file.h`) holds a reference count `ref`, a private
+pointer `priv`, and `read`, `write`, and `close` function pointers. `file_ref`
+and `file_close` (`kernel/file.c`) manage the count; when `ref` reaches zero,
+`close` is called if non-null. Today there are two implementations: the static
+console (`kernel/console.c`, `close = 0`) and one-page ring-buffer pipes
+(`kernel/pipe.c`, freed once both ends close).

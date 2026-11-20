@@ -10,18 +10,19 @@ for the `virt` machine; the kernel does not read them from the device tree.
 The console is an NS16550-compatible UART at `0x10000000`, on PLIC IRQ 10. The
 driver uses three registers:
 
-| Offset | Register | Use                                          |
-|--------|----------|----------------------------------------------|
-| 0      | `RBR` / `THR` | Read a received byte / write a byte to send |
-| 1      | `IER`    | Bit 0 enables the "data received" interrupt  |
-| 5      | `LSR`    | Bit 0 (`DR`) is set when a byte is waiting   |
+| Offset | Register      | Use                                                          |
+|--------|---------------|--------------------------------------------------------------|
+| 0      | `RBR` / `THR` | Read a received byte / write a byte to send                  |
+| 1      | `IER`         | Bit 0 enables the "data received" interrupt                  |
+| 5      | `LSR`         | Bit 0 (`DR`) = byte waiting in `RBR`; bit 5 (`THRE`) = `THR` ready |
 
-- **Output**: `uart_putc` writes straight to `THR`. It does not wait for the
-  transmitter to be ready, which works on QEMU but would drop characters on
-  real hardware.
-- **Input**: `uart_getc` checks `LSR.DR`. If no byte is waiting, it sleeps on
-  `uart_rx_wait`. The receive interrupt calls `uart_interrupt`, which wakes the
-  sleeping thread, and the loop checks again.
+- **Output**: `uart_putc` polls `LSR.THRE` until the transmitter holding
+  register is empty, then writes the byte to `THR`.
+- **Input**: `uart_interrupt` drains every waiting byte from `RBR` into a
+  512-byte ring buffer (dropping excess bytes if full) and wakes
+  `uart_rx_wait`, which clears the level-triggered receive interrupt even when
+  no thread is reading. `uart_getc` sleeps on `uart_rx_wait` while the buffer
+  is empty and pops the next byte.
 
 `kernel/console.c` turns the UART into a `struct file`, so user programs reach
 it through file descriptors 0, 1 and 2. Its `write` copies user data into a

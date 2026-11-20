@@ -45,20 +45,10 @@ Code: `kernel_main` in `kernel/kernel.c`.
 
 ### Files
 
-- **No reference counts, no `close`, no `dup`, no pipes.** The console is the
-  only file, and it is never freed.
 - **Console `read` returns one byte per call.** There is no line discipline in
   the kernel.
 
 ### Devices
 
-- **`uart_putc` does not wait for the transmitter.** QEMU accepts bytes
-  immediately, but real hardware would drop them.
-- **Unread input keeps the UART interrupt asserted.** The receive interrupt
-  stays raised until someone reads `RBR`, but `uart_interrupt` only wakes
-  readers. When a byte arrives while no thread is reading (for example while
-  the shell waits for `count`), a level-triggered PLIC on real hardware would
-  deliver the interrupt again right after every completion. QEMU's PLIC does
-  not, so this does not show up there.
 - **`poweroff` reports a failed shutdown as `-ERR_NOSYS`**, because
   `syscall_handle` falls through to the "unknown call" return.
