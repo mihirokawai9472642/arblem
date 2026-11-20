@@ -55,8 +55,13 @@ static long console_write(struct file *f, unsigned long buf,
     return (long)len;
 }
 
-static struct file console = {console_read, console_write};
+static struct file console = {
+    .ref = 0,
+    .read = console_read,
+    .write = console_write,
+    .close = 0,
+};
 
 struct file *console_file(void) {
-    return &console;
+    return file_ref(&console);
 }

@@ -94,7 +94,129 @@ static const char *shell_strerror(long err) {
         return "Bad executable\n";
     }
 
+    if (err == -ERR_MFILE) {
+        return "Too many open files\n";
+    }
+
     return "Error\n";
+}
+
+// Advance *start past leading spaces and drop trailing spaces from *len.
+static void shell_trim(const char **start, unsigned long *len) {
+    while (*len > 0 && **start == ' ') {
+        (*start)++;
+        (*len)--;
+    }
+
+    while (*len > 0 && (*start)[*len - 1] == ' ') {
+        (*len)--;
+    }
+}
+
+// Replace target with newfd (closing newfd) and return a dup of the old target.
+static long shell_swap_fd(int target, int newfd) {
+    long saved = sys_dup(target);
+
+    if (saved < 0) {
+        return saved;
+    }
+
+    sys_close(target);
+    sys_dup(newfd);
+    sys_close(newfd);
+
+    return saved;
+}
+
+// Restore target from saved (closing saved).
+static void shell_restore_fd(int target, int saved) {
+    sys_close(target);
+    sys_dup(saved);
+    sys_close(saved);
+}
+
+// Run "left | right": connect left's stdout to right's stdin with a pipe.
+static void shell_exec_pipe(const char *line, const char *bar) {
+    const char *left = line;
+    unsigned long llen = (unsigned long)(bar - line);
+    const char *right = bar + 1;
+    unsigned long rlen = str_len(right);
+
+    shell_trim(&left, &llen);
+    shell_trim(&right, &rlen);
+
+    if (llen == 0 || rlen == 0) {
+        sys_puts("Bad pipeline\n");
+
+        return;
+    }
+
+    int fds[2] = {-1, -1};
+    long err = sys_pipe(fds);
+
+    if (err < 0) {
+        sys_puts(shell_strerror(err));
+
+        return;
+    }
+
+    long saved_out = shell_swap_fd(FD_STDOUT, fds[1]);
+
+    if (saved_out < 0) {
+        sys_close(fds[0]);
+        sys_close(fds[1]);
+        sys_puts(shell_strerror(saved_out));
+
+        return;
+    }
+
+    long pid1 = sys_spawn(left, llen);
+
+    // Restore stdout right away so only left holds the write end of the pipe.
+    shell_restore_fd(FD_STDOUT, (int)saved_out);
+
+    if (pid1 < 0) {
+        sys_close(fds[0]);
+        sys_puts(shell_strerror(pid1));
+
+        return;
+    }
+
+    long saved_in = shell_swap_fd(FD_STDIN, fds[0]);
+
+    if (saved_in < 0) {
+        sys_close(fds[0]);
+        sys_puts(shell_strerror(saved_in));
+        sys_wait(pid1, 0);
+
+        return;
+    }
+
+    long pid2 = sys_spawn(right, rlen);
+
+    // Restore stdin so the shell holds neither end of the pipe.
+    shell_restore_fd(FD_STDIN, (int)saved_in);
+
+    if (pid2 < 0) {
+        sys_puts(shell_strerror(pid2));
+        sys_wait(pid1, 0);
+
+        return;
+    }
+
+    int status1 = 0;
+    int status2 = 0;
+
+    sys_wait(pid1, &status1);
+    sys_wait(pid2, &status2);
+
+    if (status2 != 0) {
+        sys_puts("exit: ");
+        shell_putdec(status2);
+    } else if (status1 != 0) {
+        sys_puts("exit: ");
+        shell_putdec(status1);
+    }
 }
 
 static void shell_exec(const char *line) {
@@ -102,12 +224,23 @@ static void shell_exec(const char *line) {
         return;
     }
 
+    // Look for a single pipe: "left | right".
+    for (unsigned long i = 0; line[i] != '\0'; i++) {
+        if (line[i] == '|') {
+            shell_exec_pipe(line, line + i);
+
+            return;
+        }
+    }
+
     if (str_equal(line, "help")) {
         sys_puts("help: Show help message.\n");
         sys_puts("pages: Show free pages.\n");
         sys_puts("ticks: Show timer ticks.\n");
         sys_puts("poweroff: Power off the machine.\n");
-        sys_puts("hello, count, fault, orphan, regcheck: Run the program.\n");
+        sys_puts("hello, count, fault, orphan, regcheck, pipecheck, upper: Run "
+                 "the program.\n");
+        sys_puts("cmd1 | cmd2: Connect cmd1's stdout to cmd2's stdin.\n");
 
         return;
     }

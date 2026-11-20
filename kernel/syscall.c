@@ -6,6 +6,7 @@
 #include "error.h"
 #include "file.h"
 #include "page.h"
+#include "pipe.h"
 #include "proc.h"
 #include "sbi.h"
 #include "sysnum.h"
@@ -36,6 +37,67 @@ static long syscall_read(unsigned long fd, unsigned long buf,
     }
 
     return f->read(f, buf, len);
+}
+
+static long syscall_close(unsigned long fd) {
+    return thread_close_fd(fd);
+}
+
+static long syscall_dup(unsigned long fd) {
+    struct file *f = thread_file(fd);
+
+    if (f == 0) {
+        return -ERR_BADF;
+    }
+
+    int newfd = thread_alloc_fd(f);
+
+    if (newfd < 0) {
+        return newfd;
+    }
+
+    file_ref(f);
+
+    return newfd;
+}
+
+static long syscall_pipe(unsigned long fds_addr) {
+    struct file *rf = 0;
+    struct file *wf = 0;
+    int err = pipe_create(&rf, &wf);
+
+    if (err < 0) {
+        return err;
+    }
+
+    int rfd = thread_alloc_fd(rf);
+
+    if (rfd < 0) {
+        file_close(rf);
+        file_close(wf);
+
+        return rfd;
+    }
+
+    int wfd = thread_alloc_fd(wf);
+
+    if (wfd < 0) {
+        thread_close_fd(rfd);
+        file_close(wf);
+
+        return wfd;
+    }
+
+    int fds[2] = {rfd, wfd};
+
+    if (vm_copy_to_user(fds_addr, fds, sizeof(fds)) != 0) {
+        thread_close_fd(rfd);
+        thread_close_fd(wfd);
+
+        return -ERR_FAULT;
+    }
+
+    return 0;
 }
 
 // name is not NUL-terminated in user memory; len gives its length.
@@ -106,6 +168,18 @@ long syscall_handle(unsigned long num, unsigned long arg0, unsigned long arg1,
     // -ERR_NOSYS.
     if (num == SYSCALL_POWEROFF) {
         sbi_shutdown(SBI_SRST_REASON_NONE);
+    }
+
+    if (num == SYSCALL_CLOSE) {
+        return syscall_close(arg0);
+    }
+
+    if (num == SYSCALL_DUP) {
+        return syscall_dup(arg0);
+    }
+
+    if (num == SYSCALL_PIPE) {
+        return syscall_pipe(arg0);
     }
 
     return -ERR_NOSYS;

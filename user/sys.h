@@ -78,3 +78,20 @@ static inline long sys_wait(long pid, int *status) {
 static inline long sys_poweroff(void) {
     return sys_call(SYSCALL_POWEROFF, 0, 0, 0);
 }
+
+// Close file descriptor fd. Returns 0, or -ERR_BADF.
+static inline long sys_close(int fd) {
+    return sys_call(SYSCALL_CLOSE, fd, 0, 0);
+}
+
+// Duplicate fd into the lowest free file descriptor. Returns the new fd,
+// or -ERR_BADF / -ERR_MFILE.
+static inline long sys_dup(int fd) {
+    return sys_call(SYSCALL_DUP, fd, 0, 0);
+}
+
+// Create a pipe and store its read and write fds in fds[0] and fds[1].
+// Returns 0, or a negative -ERR_* code.
+static inline long sys_pipe(int fds[2]) {
+    return sys_call(SYSCALL_PIPE, (long)fds, 0, 0);
+}

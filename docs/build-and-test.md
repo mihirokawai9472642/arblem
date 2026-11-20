@@ -78,24 +78,27 @@ The smoke test boots the real kernel in QEMU and types into the shell:
    logs all output to `build/test.log`.
 2. Waits for the `> ` prompt.
 3. Types `pages`, `hello`, `pages`, `orphan` seven times, `regcheck`,
-   `count`, `pages`, `fault`, `pages`, `foo`, `pages`, `poweroff`, each ending
-   in `\r` as a terminal would send it. `count` takes about a second, which gives the
-   orphans' children time to finish and be freed before the next `pages`.
+   `pipecheck`, `pages`, `hello | upper`, `pages`, `count`, `pages`, `fault`,
+   `pages`, `foo`, `pages`, `poweroff`, each ending in `\r` as a terminal would
+   send it. `count` takes about a second, which gives the orphans' children time
+   to finish and be freed before the next `pages`.
 4. Waits for QEMU to exit.
 
 It then checks the log:
 
-| Check     | Passes when                                              |
-|-----------|----------------------------------------------------------|
-| `boot`    | The kernel banner appears                                |
-| `hello`   | `hello` printed its message                              |
-| `count`   | `count` reached `count: 4`                               |
-| `fault`   | The shell printed `exit: -1` for `fault`                 |
-| `unknown` | `foo` was reported as `Unknown command`                  |
-| `regs`    | `regcheck` printed `regs: ok`: `gp` and `tp` are saved per program, and a new program starts with them cleared |
-| `orphan`  | `hello` ran 8 times: once alone, and once from each `orphan`, so orphans are freed and the thread table never fills up |
-| `pages`   | All five `pages` outputs are identical, so nothing leaked |
-| `poweroff`| QEMU exited with status 0                                |
+| Check      | Passes when                                              |
+|------------|----------------------------------------------------------|
+| `boot`     | The kernel banner appears                                |
+| `hello`    | `hello` printed its message                              |
+| `count`    | `count` reached `count: 4`                               |
+| `fault`    | The shell printed `exit: -1` for `fault`                 |
+| `unknown`  | `foo` was reported as `Unknown command`                  |
+| `regs`     | `regcheck` printed `regs: ok`: `gp` and `tp` are saved per program, and a new program starts with them cleared |
+| `pipe`     | `pipecheck` printed `pipe: ok`: `close`, `dup`, and `pipe` pass all checks |
+| `pipeline` | `hello \| upper` printed `HELLO WORLD FROM U-MODE!`      |
+| `orphan`   | `hello` ran 8 times: once alone, and once from each `orphan`, so orphans are freed and the thread table never fills up |
+| `pages`    | All seven `pages` outputs are identical, so nothing leaked |
+| `poweroff` | QEMU exited with status 0                                |
 
 The test fails at once if the log contains `panic: `, or if an expected line
 does not appear within 20 seconds.

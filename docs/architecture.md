@@ -44,8 +44,9 @@ RISC-V has three privilege levels, and Arblem uses all of them:
    (read, write,      (interrupts)         -> thread_exit(-1)
     spawn, wait...)        |
      |      |              v
-     |   file.h       thread.c / thread.S  scheduling, sleep/wakeup
+     |   file.h/.c    thread.c / thread.S  scheduling, sleep/wakeup
      |   console.c         |
+     |   pipe.c            |
      |   uart.c            v
      v                 vm.c  page.c        address spaces, pages
    proc.c  elf.c  user.S                   (embedded user ELF files)
@@ -61,7 +62,9 @@ RISC-V has three privilege levels, and Arblem uses all of them:
 | `thread.S/.c`| Thread table, context switch, round-robin scheduler, sleep/wakeup     |
 | `proc.c`     | Load an ELF image into a new address space and start a thread in it  |
 | `syscall.c`  | Decode system call numbers and arguments                              |
+| `file.c`     | Reference counting and closing for `struct file`                      |
 | `console.c`  | The console `struct file`, backed by the UART                         |
+| `pipe.c`     | One-page ring-buffer pipes (`struct file` read/write ends)            |
 | `uart.c`     | 16550 UART driver with receive interrupts                             |
 | `plic.c`     | Platform-Level Interrupt Controller: enable, claim, complete          |
 | `timer.c`    | Periodic timer interrupt through the `stimecmp` CSR                   |

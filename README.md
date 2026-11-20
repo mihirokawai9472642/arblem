@@ -30,8 +30,8 @@ exit: -1
 - Preemptive round-robin threads, driven by a 100 Hz timer
 - Interrupt-driven UART input through the PLIC
 - User programs loaded from ELF files embedded in the kernel image
-- System calls: `read`, `write`, `exit`, `spawn`, `wait`, `ticks`, `pages`, `poweroff`
-- Per-process file descriptors, with the console as stdin, stdout, and stderr
+- System calls: `read`, `write`, `close`, `dup`, `pipe`, `exit`, `spawn`, `wait`, `ticks`, `pages`, `poweroff`
+- Per-process reference-counted file descriptors, with the console and pipes
 - A smoke test that boots the system in QEMU and checks the shell's output
 
 ## Getting started
@@ -95,7 +95,10 @@ and SSH are not available in the container.
 | `count`    | Count from 0 to 4 slowly                     |
 | `fault`    | Write to address 0 and get killed            |
 | `orphan`   | Start `hello` and exit without waiting for it |
-| `regcheck` | Check that `gp` and `tp` are kept per program |
+| `regcheck`     | Check that `gp` and `tp` are kept per program        |
+| `pipecheck`    | Check `close`, `dup`, and `pipe`                     |
+| `upper`        | Convert stdin to uppercase on stdout                 |
+| `cmd1 \| cmd2` | Connect `cmd1`'s stdout to `cmd2`'s stdin with a pipe |
 
 ## Layout
 

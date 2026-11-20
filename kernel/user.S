@@ -17,6 +17,10 @@
 .global user_regcheck_end
 .global user_regclobber
 .global user_regclobber_end
+.global user_pipecheck
+.global user_pipecheck_end
+.global user_upper
+.global user_upper_end
 .global user_shell
 .global user_shell_end
 
@@ -51,6 +55,16 @@ user_regcheck_end:
 user_regclobber:
     .incbin "build/user/regclobber.elf"
 user_regclobber_end:
+
+.balign 8
+user_pipecheck:
+    .incbin "build/user/pipecheck.elf"
+user_pipecheck_end:
+
+.balign 8
+user_upper:
+    .incbin "build/user/upper.elf"
+user_upper_end:
 
 .balign 8
 user_shell:

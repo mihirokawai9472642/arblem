@@ -44,4 +44,12 @@ struct file *thread_file(unsigned long fd);
 
 // Install file f as fd in thread id. fd must be below THREAD_FILE_MAX.
 void thread_set_file(int id, unsigned long fd, struct file *f);
+
+// Install file f in the lowest free fd of the current thread. Returns the
+// fd, or -ERR_MFILE if the table is full.
+int thread_alloc_fd(struct file *f);
+
+// Close fd in the current thread and drop its file reference. Returns 0, or
+// -ERR_BADF if fd is out of range or unused.
+int thread_close_fd(unsigned long fd);
 #endif

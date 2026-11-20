@@ -7,6 +7,7 @@
 
 #include "thread.h"
 #include "error.h"
+#include "file.h"
 #include "page.h"
 #include "panic.h"
 #include "vm.h"
@@ -89,8 +90,10 @@ int thread_create(void (*entry)(unsigned long), unsigned long arg,
 
     // Inherit the creator's files. Threads created during boot get none.
     for (int fd = 0; fd < THREAD_FILE_MAX; fd++) {
-        t->files[fd] =
+        struct file *f =
             thread_current >= 0 ? thread_table[thread_current].files[fd] : 0;
+
+        t->files[fd] = f != 0 ? file_ref(f) : 0;
     }
 
     return id;
@@ -174,7 +177,18 @@ void thread_wakeup(void *chan) {
 }
 
 void thread_exit(int code) {
-    thread_table[thread_current].exit_code = code;
+    struct thread *t = &thread_table[thread_current];
+
+    t->exit_code = code;
+
+    // Close open files now, before turning into a zombie, so a parent
+    // waiting for EOF on a pipe does not deadlock waiting for thread_wait.
+    for (int fd = 0; fd < THREAD_FILE_MAX; fd++) {
+        if (t->files[fd] != 0) {
+            file_close(t->files[fd]);
+            t->files[fd] = 0;
+        }
+    }
 
     // Children become orphans. Once an orphan has exited, thread_reap frees
     // it, since no parent is left to wait for it.
@@ -222,4 +236,36 @@ struct file *thread_file(unsigned long fd) {
 
 void thread_set_file(int id, unsigned long fd, struct file *f) {
     thread_table[id].files[fd] = f;
+}
+
+int thread_alloc_fd(struct file *f) {
+    struct thread *t = &thread_table[thread_current];
+
+    for (int fd = 0; fd < THREAD_FILE_MAX; fd++) {
+        if (t->files[fd] == 0) {
+            t->files[fd] = f;
+
+            return fd;
+        }
+    }
+
+    return -ERR_MFILE;
+}
+
+int thread_close_fd(unsigned long fd) {
+    if (fd >= THREAD_FILE_MAX) {
+        return -ERR_BADF;
+    }
+
+    struct thread *t = &thread_table[thread_current];
+    struct file *f = t->files[fd];
+
+    if (f == 0) {
+        return -ERR_BADF;
+    }
+
+    t->files[fd] = 0;
+    file_close(f);
+
+    return 0;
 }
