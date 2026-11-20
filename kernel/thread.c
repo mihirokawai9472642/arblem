@@ -10,6 +10,8 @@
 #include "file.h"
 #include "page.h"
 #include "panic.h"
+#include "proc.h"
+#include "riscv.h"
 #include "vm.h"
 
 // Slots in the thread table, including the idle thread.
@@ -24,12 +26,17 @@ void thread_entry(void);
 //   stack != 0, chan != 0            sleeping on chan
 //   stack != 0, chan == &thread_dead exited, waiting to be freed
 struct thread {
-    unsigned long sp;  // Saved kernel sp while switched out
-    void *chan;        // Wait channel, 0 if runnable
-    unsigned long *vm; // Page table root, 0 for the kernel's
-    void *stack;       // Kernel stack page, 0 if the slot is free
-    int parent;        // ID of the creating thread, -1 if none
-    int exit_code;     // Set by thread_exit
+    unsigned long sp;        // Saved kernel sp while switched out
+    void *chan;              // Wait channel, 0 if runnable
+    unsigned long *vm;       // Page table root, 0 for the kernel's
+    void *stack;             // Kernel stack page, 0 if the slot is free
+    int parent;              // ID of the creating thread, -1 if none
+    int exit_code;           // Set by thread_exit
+    unsigned long user_sp;   // Initial U-mode sp
+    unsigned long user_argc; // Initial U-mode a0 (argc)
+    unsigned long user_argv; // Initial U-mode a1 (argv)
+    unsigned long heap_base; // First byte of the user heap (page aligned)
+    unsigned long heap_end;  // Current program break (sbrk)
     struct file *files[THREAD_FILE_MAX];
 };
 
@@ -87,6 +94,11 @@ int thread_create(void (*entry)(unsigned long), unsigned long arg,
     t->vm = vm;
     t->stack = stack;
     t->parent = thread_current;
+    t->user_sp = 0;
+    t->user_argc = 0;
+    t->user_argv = 0;
+    t->heap_base = 0;
+    t->heap_end = 0;
 
     // Inherit the creator's files. Threads created during boot get none.
     for (int fd = 0; fd < THREAD_FILE_MAX; fd++) {
@@ -266,6 +278,120 @@ int thread_close_fd(unsigned long fd) {
 
     t->files[fd] = 0;
     file_close(f);
+
+    return 0;
+}
+
+void thread_set_start(int id, unsigned long sp, unsigned long argc,
+                      unsigned long argv) {
+    struct thread *t = &thread_table[id];
+
+    t->user_sp = sp;
+    t->user_argc = argc;
+    t->user_argv = argv;
+}
+
+void thread_get_start(unsigned long *sp, unsigned long *argc,
+                      unsigned long *argv) {
+    struct thread *t = &thread_table[thread_current];
+
+    *sp = t->user_sp;
+    *argc = t->user_argc;
+    *argv = t->user_argv;
+}
+
+// Round addr up to the next PAGE_SIZE boundary.
+static unsigned long page_round_up(unsigned long addr) {
+    return (addr + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1UL);
+}
+
+void thread_set_heap(int id, unsigned long base) {
+    struct thread *t = &thread_table[id];
+
+    t->heap_base = base;
+    t->heap_end = base;
+}
+
+long thread_sbrk(long delta) {
+    struct thread *t = &thread_table[thread_current];
+    unsigned long old_end = t->heap_end;
+
+    if (delta == 0) {
+        return (long)old_end;
+    }
+
+    if (delta > 0) {
+        unsigned long inc = (unsigned long)delta;
+
+        if (inc > PROC_HEAP_LIMIT - old_end) {
+            return -ERR_NOMEM;
+        }
+
+        t->heap_end = old_end + inc;
+
+        return (long)old_end;
+    }
+
+    // delta < 0: negate in unsigned arithmetic to avoid UB on LONG_MIN.
+    unsigned long dec = -(unsigned long)delta;
+
+    if (dec > old_end - t->heap_base) {
+        return -ERR_NOMEM;
+    }
+
+    unsigned long new_end = old_end - dec;
+    unsigned long old_top = page_round_up(old_end);
+    unsigned long new_top = page_round_up(new_end);
+
+    for (unsigned long va = new_top; va < old_top; va += PAGE_SIZE) {
+        vm_unmap(t->vm, va);
+    }
+
+    t->heap_end = new_end;
+
+    return (long)old_end;
+}
+
+int thread_fault(unsigned long va) {
+    if (thread_current < 0) {
+        return -1;
+    }
+
+    struct thread *t = &thread_table[thread_current];
+
+    if (t->vm == 0) {
+        return -1;
+    }
+
+    int in_heap = va >= t->heap_base && va < t->heap_end;
+    int in_stack = va >= PROC_STACK_MIN && va < PROC_STACK_TOP;
+
+    if (!in_heap && !in_stack) {
+        return -1;
+    }
+
+    unsigned long page_va = va & ~(PAGE_SIZE - 1UL);
+
+    // If the page is already mapped, this was a permission fault (not a
+    // missing page). Refuse it rather than overwriting the PTE.
+    if (vm_is_mapped(t->vm, page_va)) {
+        return -1;
+    }
+
+    void *page = page_alloc();
+
+    if (page == 0) {
+        return -1;
+    }
+
+    if (vm_map(t->vm, page_va, (unsigned long)page, PAGE_SIZE,
+               PTE_R | PTE_W | PTE_U) != 0) {
+        page_free(page);
+
+        return -1;
+    }
+
+    __asm__ volatile("sfence.vma" : : : "memory");
 
     return 0;
 }

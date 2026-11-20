@@ -15,7 +15,7 @@
 #include "vm.h"
 
 // Size of the kernel buffer for a program name, including the NUL.
-#define SYSCALL_NAME_MAX 16
+#define SYSCALL_NAME_MAX 64
 
 static long syscall_write(unsigned long fd, unsigned long buf,
                           unsigned long len) {
@@ -101,7 +101,8 @@ static long syscall_pipe(unsigned long fds_addr) {
 }
 
 // name is not NUL-terminated in user memory; len gives its length.
-static long syscall_spawn(unsigned long name, unsigned long len) {
+static long syscall_spawn(unsigned long name, unsigned long len,
+                          unsigned long argv_addr) {
     char kname[SYSCALL_NAME_MAX];
 
     if (len >= SYSCALL_NAME_MAX) {
@@ -114,7 +115,48 @@ static long syscall_spawn(unsigned long name, unsigned long len) {
 
     kname[len] = '\0';
 
-    return proc_spawn(kname);
+    if (argv_addr == 0) {
+        return proc_spawn(kname, 0, 0);
+    }
+
+    char kargs[PROC_ARG_BYTES];
+    const char *kargv[PROC_ARG_MAX];
+    int argc = 0;
+    unsigned long used = 0;
+
+    for (;;) {
+        unsigned long uptr = 0;
+        unsigned long elem = argv_addr + (unsigned long)argc * sizeof(uptr);
+
+        if (vm_copy_from_user(&uptr, elem, sizeof(uptr)) != 0) {
+            return -ERR_FAULT;
+        }
+
+        if (uptr == 0) {
+            break;
+        }
+
+        if (argc == PROC_ARG_MAX) {
+            return -ERR_2BIG;
+        }
+
+        int n =
+            vm_copy_str_from_user(kargs + used, uptr, PROC_ARG_BYTES - used);
+
+        if (n < 0) {
+            return n;
+        }
+
+        kargv[argc] = kargs + used;
+        used += (unsigned long)n + 1;
+        argc++;
+    }
+
+    if (argc == 0) {
+        return proc_spawn(kname, 0, 0);
+    }
+
+    return proc_spawn(kname, argc, kargv);
 }
 
 // status may be 0 when the caller does not want the exit status.
@@ -157,7 +199,7 @@ long syscall_handle(unsigned long num, unsigned long arg0, unsigned long arg1,
     }
 
     if (num == SYSCALL_SPAWN) {
-        return syscall_spawn(arg0, arg1);
+        return syscall_spawn(arg0, arg1, arg2);
     }
 
     if (num == SYSCALL_WAIT) {
@@ -180,6 +222,10 @@ long syscall_handle(unsigned long num, unsigned long arg0, unsigned long arg1,
 
     if (num == SYSCALL_PIPE) {
         return syscall_pipe(arg0);
+    }
+
+    if (num == SYSCALL_SBRK) {
+        return thread_sbrk((long)arg0);
     }
 
     return -ERR_NOSYS;

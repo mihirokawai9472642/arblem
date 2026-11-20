@@ -96,9 +96,13 @@ back just before returning, makes `thread_yield` safe inside a trap.
 | Supervisor timer interrupt            | `timer_interrupt()`, then `thread_yield()`                      |
 | Supervisor external interrupt         | Claim the IRQ from the PLIC, call `uart_interrupt()` if it is the UART, complete the IRQ, then `thread_yield()` |
 | `ecall` from U-mode (cause 8)         | `syscall_handle(a7, a0, a1, a2)`, store the result in the frame's `a0`, and return to `sepc + 4` |
+| Load or store page fault from U-mode (cause 13 or 15) | Call `thread_fault(tval)`. If it maps a heap or stack page, resume at `sepc` to retry the instruction; otherwise print the trap and end the program with `thread_exit(-1)` |
 | Breakpoint from S-mode                | Print the trap, skip the `ebreak` (2 or 4 bytes), and continue  |
 | Any other exception from U-mode       | Print the trap and end the program with `thread_exit(-1)`       |
 | Any other exception from S-mode       | Print the trap and `panic`                                      |
+
+Instruction page faults (`EXC_INSN_PAGE_FAULT`, cause 12) are never
+demand-paged, keeping the heap and stack non-executable (W^X).
 
 The breakpoint rule lets you drop an `ebreak` into kernel code as a cheap "I got
 here" marker. The instruction length check reads the low two bits of the
@@ -120,18 +124,15 @@ blocking interrupts in the user program.
 
 ## Entering U-mode for the first time
 
-`trap_enter_user(pc, sp)` in `kernel/trap.S` starts a user program as if it were
-returning from a trap:
+`trap_enter_user(pc, sp, argc, argv)` in `kernel/trap.S` starts a user program
+as if it were returning from a trap:
 
 1. Clear `SIE`, so no trap can arrive while `sscratch` is non-zero in S-mode.
 2. Clear `SPP`, so `sret` goes to U-mode.
 3. Set `sepc` to the program's entry point.
 4. Put the current kernel `sp` in `sscratch`. This is the kernel stack for the
    thread's future traps.
-5. Load the user stack pointer.
-6. Clear `gp` and `tp`, so the program does not start with the values the
-   previous program left in them.
+5. Load the user stack pointer, `a0 = argc`, and `a1 = argv`.
+6. Clear all 28 other integer registers, so the program does not start with
+   kernel or previous-thread values left in them.
 7. `sret`.
-
-The other registers are not cleared, so the program starts with whatever the
-kernel left in them. See [Known issues](known-issues.md).

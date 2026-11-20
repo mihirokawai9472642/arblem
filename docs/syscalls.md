@@ -25,6 +25,7 @@ numbers match Linux, which makes them easy to look up.
 | Name         | Value | Meaning                                         |
 |--------------|-------|-------------------------------------------------|
 | `ERR_NOENT`  | 2     | No program with that name                       |
+| `ERR_2BIG`   | 7     | Argument list too long                          |
 | `ERR_NOEXEC` | 8     | The program is not a valid executable           |
 | `ERR_BADF`   | 9     | Bad file descriptor                             |
 | `ERR_CHILD`  | 10    | Not a child of the caller                       |
@@ -82,19 +83,24 @@ Returns the number of free physical pages.
 
 Wrapper: `sys_pages`.
 
-### 6 `spawn(name, len)`
+### 6 `spawn(name, len, argv)`
 
 Starts the embedded program called `name` (`len` bytes, not NUL-terminated) as
-a child of the caller, with a copy of the caller's file table. Returns the
-child's PID.
+a child of the caller, with a copy of the caller's file table. `argv` is either
+0 (passes `name` alone as `argv[0]`) or a NULL-terminated array of up to
+`PROC_ARG_MAX` (16) NUL-terminated user strings totaling at most `PROC_ARG_BYTES`
+(256) bytes including NULs. Returns the child's PID.
 
-- `-ERR_NOENT` if no program has that name, or `len` is 16 or more.
-- `-ERR_FAULT` if `name` is not readable user memory.
+- `-ERR_NOENT` if no program has that name, or `len` is 64 or more.
+- `-ERR_FAULT` if `name`, `argv`, or any argument string is not readable user
+  memory.
+- `-ERR_2BIG` if `argv` has more than 16 entries, a string/array exceeds the
+  256-byte buffer, or the arguments do not fit on the initial stack page.
 - `-ERR_NOEXEC` if the embedded ELF file fails the loader's checks.
 - `-ERR_NOMEM` if there are not enough free pages.
 - `-ERR_AGAIN` if the thread table is full.
 
-Wrapper: `sys_spawn`.
+Wrappers: `sys_spawn`, `sys_spawnv`.
 
 ### 7 `wait(pid, status)`
 
@@ -148,6 +154,20 @@ page) and writes the read descriptor to `fds[0]` and the write descriptor to
 - `-ERR_FAULT` if `fds` is not writable user memory.
 
 Wrapper: `sys_pipe`.
+
+### 12 `sbrk(delta)`
+
+Moves the calling program's heap break by `delta` bytes and returns the previous
+break (a user address).
+
+- Growing (`delta > 0`) advances the break lazily without allocating physical
+  pages; pages are demand-paged on first access (or during syscall copy checks).
+- Shrinking (`delta < 0`) unmaps and frees every page wholly above the new break.
+- `sbrk(0)` returns the current break.
+- `-ERR_NOMEM` if growing past `PROC_HEAP_LIMIT` (`0x7ffef000`) or shrinking
+  below `heap_base`.
+
+Wrapper: `sys_sbrk`.
 
 ## Adding a system call
 

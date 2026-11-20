@@ -95,12 +95,19 @@ The layout of a user address space:
 0x40000000               .text            R X U
                          .rodata          R U          page aligned
                          .data, .bss      R W U        page aligned
+heap_base                heap (sbrk)      R W U        demand paged, up to 0x7ffef000
                          (unmapped)
-0x7ffff000               stack, one page  R W U
-0x80000000               initial sp; kernel image and RAM from here (no U)
+0x7ffef000               stack guard      unmapped     4 KiB
+0x7fff0000               stack (64 KiB)   R W U        demand paged; top 4 KiB mapped at spawn
+0x80000000               initial sp top; kernel image and RAM from here (no U)
 ```
 
-See [Processes](processes.md) for how the segments are loaded.
+`vm_unmap(root, va)` unmaps a single 4 KiB page, frees its physical page, and
+flushes the TLB with `sfence.vma` (used when `sbrk` shrinks the heap).
+`vm_is_mapped(root, va)` reports whether a valid leaf mapping exists at `va`.
+
+See [Processes](processes.md) for how the segments and stack are loaded, and
+[Traps](traps.md) for demand paging.
 
 ## Switching address spaces
 
@@ -116,11 +123,15 @@ the pointer could point at a kernel page, at an unmapped page, or at a page the
 program may not write. `vm_copy_from_user` and `vm_copy_to_user` handle this:
 
 1. `vm_check_user` walks the *current* page table for every page in the range,
-   and requires `V`, `U`, and `R` (for reading) or `W` (for writing). It also
-   rejects ranges that wrap around or leave the Sv39 address space.
+   and requires `V`, `U`, and `R` (for reading) or `W` (for writing). When a
+   page is not mapped yet, it calls `thread_fault(va)` so an untouched
+   demand-paged heap or stack page passed to a system call is mapped on the
+   spot. It also rejects ranges that wrap around or leave the Sv39 address
+   space.
 2. The copy sets `sstatus.SUM` ("permit Supervisor User Memory access") for the
    duration of the copy. Without `SUM`, S-mode faults on any `U` page, which
    protects the kernel from following user pointers by accident.
 
 Both functions return 0 on success and -1 if the check fails. Callers turn -1
-into `-ERR_FAULT`.
+into `-ERR_FAULT`. `vm_copy_str_from_user` copies a NUL-terminated string up to
+a caller-supplied bound, returning the length, `-ERR_FAULT`, or `-ERR_2BIG`.

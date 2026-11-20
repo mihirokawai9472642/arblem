@@ -26,11 +26,11 @@ exit: -1
 ## Features
 
 - S-mode kernel on OpenSBI, using SBI for kernel messages and shutdown
-- Sv39 paging, with a separate address space per program and W^X mappings
+- Sv39 paging, with a separate address space per program, W^X mappings, and demand-paged heap and stack (up to 64 KiB with a guard page)
 - Preemptive round-robin threads, driven by a 100 Hz timer
 - Interrupt-driven UART input through the PLIC
-- User programs loaded from ELF files embedded in the kernel image
-- System calls: `read`, `write`, `close`, `dup`, `pipe`, `exit`, `spawn`, `wait`, `ticks`, `pages`, `poweroff`
+- User programs loaded from ELF files embedded in the kernel image, with `argc`/`argv` argument passing
+- System calls: `read`, `write`, `close`, `dup`, `pipe`, `exit`, `spawn`, `wait`, `ticks`, `pages`, `sbrk`, `poweroff`
 - Per-process reference-counted file descriptors, with the console and pipes
 - A smoke test that boots the system in QEMU and checks the shell's output
 
@@ -98,6 +98,8 @@ and SSH are not available in the container.
 | `regcheck`     | Check that `gp` and `tp` are kept per program        |
 | `pipecheck`    | Check `close`, `dup`, and `pipe`                     |
 | `upper`        | Convert stdin to uppercase on stdout                 |
+| `echo`         | Print command-line arguments                         |
+| `memcheck`     | Check `sbrk`, demand paging, stack growth, and guard |
 | `cmd1 \| cmd2` | Connect `cmd1`'s stdout to `cmd2`'s stdin with a pipe |
 
 ## Layout

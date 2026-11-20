@@ -52,4 +52,24 @@ int thread_alloc_fd(struct file *f);
 // Close fd in the current thread and drop its file reference. Returns 0, or
 // -ERR_BADF if fd is out of range or unused.
 int thread_close_fd(unsigned long fd);
+
+// Record the initial U-mode stack pointer and argc/argv for thread id.
+void thread_set_start(int id, unsigned long sp, unsigned long argc,
+                      unsigned long argv);
+
+// Read the current thread's initial U-mode stack pointer and argc/argv.
+void thread_get_start(unsigned long *sp, unsigned long *argc,
+                      unsigned long *argv);
+
+// Set the initial heap base (and break) for thread id.
+void thread_set_heap(int id, unsigned long base);
+
+// Move the current thread's program break by delta bytes. Growing only moves
+// the break (pages are allocated on demand); shrinking unmaps and frees pages
+// above the new break. Returns the previous break, or -ERR_NOMEM on failure.
+long thread_sbrk(long delta);
+
+// Handle a demand page fault at virtual address va for the current thread
+// (heap or stack growth). Returns 0 if a page was mapped, -1 otherwise.
+int thread_fault(unsigned long va);
 #endif

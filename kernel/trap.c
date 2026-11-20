@@ -62,6 +62,16 @@ void trap_handler(struct trap_frame *f) {
         return;
     }
 
+    // Demand paging for U-mode load/store page faults (heap and stack).
+    // Execution faults (EXC_INSN_PAGE_FAULT) are never handled here (W^X).
+    if ((status & SSTATUS_SPP) == 0 &&
+        (cause == EXC_LOAD_PAGE_FAULT || cause == EXC_STORE_PAGE_FAULT) &&
+        thread_fault(tval) == 0) {
+        csr_write(sepc, epc);
+        csr_write(sstatus, status);
+        return;
+    }
+
     kprintf("Trap!\n");
     kprintf("scause: %x\n", cause);
     kprintf("sepc: %x\n", epc);

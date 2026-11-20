@@ -33,15 +33,6 @@ Code: `kernel_main` in `kernel/kernel.c`.
 
 - **Programs are embedded in the kernel image.** There is no file system, and
   adding a program means editing `kernel/user.S` and `kernel/proc.c`.
-- **One stack page, no heap, no arguments.** A program gets 4 KiB of stack,
-  cannot grow its memory, and `main` takes no `argc` or `argv`.
-- **Program names are shorter than 16 bytes**, the size of the kernel buffer in
-  `syscall_spawn`.
-- **A new program starts with kernel values in its registers.**
-  `trap_enter_user` clears only `gp` and `tp`, so `ra`, `s0`-`s11` and the
-  other registers still hold what the kernel left in them, such as kernel
-  addresses. They are not another program's data, but a program can read
-  them.
 
 ### Files
 

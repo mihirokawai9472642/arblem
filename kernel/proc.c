@@ -11,11 +11,6 @@
 #include "trap.h"
 #include "vm.h"
 
-// User programs live in [PROC_BASE, PROC_STACK_TOP), which is exactly one
-// top-level page table entry (see vm_create). The top page is the stack.
-#define PROC_BASE      0x40000000UL
-#define PROC_STACK_TOP 0x80000000UL
-
 // An ELF file embedded in the kernel image by user.S.
 struct proc_image {
     const char *name;
@@ -31,6 +26,8 @@ extern char user_regcheck[], user_regcheck_end[];
 extern char user_regclobber[], user_regclobber_end[];
 extern char user_pipecheck[], user_pipecheck_end[];
 extern char user_upper[], user_upper_end[];
+extern char user_echo[], user_echo_end[];
+extern char user_memcheck[], user_memcheck_end[];
 extern char user_shell[], user_shell_end[];
 
 // The programs proc_spawn can start, by name.
@@ -43,13 +40,20 @@ static const struct proc_image proc_images[] = {
     {"regclobber", user_regclobber, user_regclobber_end},
     {"pipecheck", user_pipecheck, user_pipecheck_end},
     {"upper", user_upper, user_upper_end},
+    {"echo", user_echo, user_echo_end},
+    {"memcheck", user_memcheck, user_memcheck_end},
     {"shell", user_shell, user_shell_end},
 };
 
 // Thread entry function of every process: enter U-mode at the ELF entry point
-// with the stack at the top of the user range. Does not return.
+// with the stack and argc/argv prepared by proc_create. Does not return.
 static void proc_entry(unsigned long entry) {
-    trap_enter_user(entry, PROC_STACK_TOP);
+    unsigned long sp = 0;
+    unsigned long argc = 0;
+    unsigned long argv = 0;
+
+    thread_get_start(&sp, &argc, &argv);
+    trap_enter_user(entry, sp, argc, argv);
 }
 
 // Allocate a zeroed page and map it at va. Returns the page's kernel address,
@@ -96,7 +100,7 @@ static unsigned long proc_perm(unsigned int flags) {
 // and never share a page. Bytes past filesz stay zero (.bss).
 static int proc_load(unsigned long *vm, const char *image,
                      const struct elf_phdr *ph, unsigned long *next) {
-    unsigned long end = PROC_STACK_TOP - PAGE_SIZE;
+    unsigned long end = PROC_HEAP_LIMIT;
 
     if (ph->vaddr % PAGE_SIZE != 0 || ph->vaddr < *next || ph->vaddr > end ||
         ph->memsz > end - ph->vaddr) {
@@ -125,10 +129,65 @@ static int proc_load(unsigned long *vm, const char *image,
     return 0;
 }
 
-// Build an address space from an ELF image, map a one-page stack, and create
-// the thread. Returns the thread ID or a negative error; on error everything
-// allocated so far is freed.
-static int proc_create(const char *image, unsigned long size) {
+// Lay out argv strings and the NULL-terminated argv pointer array at the top
+// of the initial stack page. Stores the resulting 16-byte aligned user sp and
+// argv address in *sp_out and *argv_out.
+static int proc_build_stack(char *stack_page, int argc, const char *const *argv,
+                            unsigned long *sp_out, unsigned long *argv_out) {
+    if (argc <= 0 || argc > PROC_ARG_MAX) {
+        return -ERR_2BIG;
+    }
+
+    unsigned long stack_va = PROC_STACK_TOP - PAGE_SIZE;
+    unsigned long off = PAGE_SIZE;
+    unsigned long uaddrs[PROC_ARG_MAX];
+
+    for (int i = 0; i < argc; i++) {
+        unsigned long len = str_len(argv[i]) + 1;
+
+        if (len > off) {
+            return -ERR_2BIG;
+        }
+
+        off -= len;
+
+        for (unsigned long j = 0; j < len; j++) {
+            stack_page[off + j] = argv[i][j];
+        }
+
+        uaddrs[i] = stack_va + off;
+    }
+
+    // Reserve (argc + 1) pointers (argv[0..argc-1] and the trailing NULL),
+    // aligned down to 16 bytes for the RISC-V LP64D ABI.
+    unsigned long table_bytes =
+        (unsigned long)(argc + 1) * sizeof(unsigned long);
+
+    if (table_bytes > off) {
+        return -ERR_2BIG;
+    }
+
+    off = (off - table_bytes) & ~15UL;
+
+    unsigned long *utab = (unsigned long *)(stack_page + off);
+
+    for (int i = 0; i < argc; i++) {
+        utab[i] = uaddrs[i];
+    }
+
+    utab[argc] = 0;
+
+    *sp_out = stack_va + off;
+    *argv_out = stack_va + off;
+
+    return 0;
+}
+
+// Build an address space from an ELF image, map a one-page stack with
+// argc/argv, and create the thread. Returns the thread ID or a negative error;
+// on error everything allocated so far is freed.
+static int proc_create(const char *image, unsigned long size, int argc,
+                       const char *const *argv) {
     if (elf_check(image, size) != 0) {
         return -ERR_NOEXEC;
     }
@@ -157,9 +216,20 @@ static int proc_create(const char *image, unsigned long size) {
         }
     }
 
-    if (proc_map_page(vm, PROC_STACK_TOP - PAGE_SIZE, PTE_R | PTE_W | PTE_U) ==
-        0) {
+    char *stack_page =
+        proc_map_page(vm, PROC_STACK_TOP - PAGE_SIZE, PTE_R | PTE_W | PTE_U);
+
+    if (stack_page == 0) {
         err = -ERR_NOMEM;
+        goto fail;
+    }
+
+    unsigned long user_sp = 0;
+    unsigned long user_argv = 0;
+
+    err = proc_build_stack(stack_page, argc, argv, &user_sp, &user_argv);
+
+    if (err < 0) {
         goto fail;
     }
 
@@ -170,6 +240,9 @@ static int proc_create(const char *image, unsigned long size) {
         goto fail;
     }
 
+    thread_set_start(id, user_sp, (unsigned long)argc, user_argv);
+    thread_set_heap(id, next);
+
     return id;
 
 fail:
@@ -178,12 +251,20 @@ fail:
     return err;
 }
 
-int proc_spawn(const char *name) {
+int proc_spawn(const char *name, int argc, const char *const *argv) {
+    const char *default_argv[1] = {name};
+
+    if (argc == 0 || argv == 0) {
+        argc = 1;
+        argv = default_argv;
+    }
+
     for (unsigned long i = 0; i < sizeof(proc_images) / sizeof(proc_images[0]);
          i++) {
         if (str_equal(name, proc_images[i].name)) {
             return proc_create(proc_images[i].start,
-                               proc_images[i].end - proc_images[i].start);
+                               proc_images[i].end - proc_images[i].start, argc,
+                               argv);
         }
     }
 

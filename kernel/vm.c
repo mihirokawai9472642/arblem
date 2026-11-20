@@ -6,9 +6,11 @@
 // entries directly.
 
 #include "vm.h"
+#include "error.h"
 #include "page.h"
 #include "panic.h"
 #include "riscv.h"
+#include "thread.h"
 #include "virt.h"
 
 // A PTE holds the physical page number in bits 53:10.
@@ -73,6 +75,24 @@ int vm_map(unsigned long *root, unsigned long va, unsigned long pa,
     }
 
     return 0;
+}
+
+void vm_unmap(unsigned long *root, unsigned long va) {
+    unsigned long *pte = vm_walk(root, va, 0);
+
+    if (pte == 0 || (*pte & PTE_V) == 0) {
+        return;
+    }
+
+    page_free((void *)PTE_TO_PA(*pte));
+    *pte = 0;
+    __asm__ volatile("sfence.vma" : : : "memory");
+}
+
+int vm_is_mapped(unsigned long *root, unsigned long va) {
+    unsigned long *pte = vm_walk(root, va, 0);
+
+    return pte != 0 && (*pte & PTE_V) != 0;
 }
 
 static void vm_map_identity(unsigned long start, unsigned long end,
@@ -170,7 +190,8 @@ void vm_free(unsigned long *root) {
 }
 
 // Check that every page of [addr, addr + len) is mapped in the active page
-// table as a valid user page with permission perm (PTE_R or PTE_W).
+// table as a valid user page with permission perm (PTE_R or PTE_W). Missing
+// pages in demand-paged heap or stack regions are faulted in on the spot.
 static int vm_check_user(unsigned long addr, unsigned long len,
                          unsigned long perm) {
     unsigned long end = addr + len;
@@ -183,6 +204,14 @@ static int vm_check_user(unsigned long addr, unsigned long len,
     for (unsigned long va = addr & ~(PAGE_SIZE - 1); va < end;
          va += PAGE_SIZE) {
         unsigned long *pte = vm_walk(vm_current_root, va, 0);
+
+        if (pte == 0 || (*pte & PTE_V) == 0) {
+            if (thread_fault(va) != 0) {
+                return -1;
+            }
+
+            pte = vm_walk(vm_current_root, va, 0);
+        }
 
         if (pte == 0 ||
             (*pte & (PTE_V | PTE_U | perm)) != (PTE_V | PTE_U | perm)) {
@@ -232,4 +261,22 @@ int vm_copy_to_user(unsigned long dst, const void *src, unsigned long len) {
     csr_clear(sstatus, SSTATUS_SUM);
 
     return 0;
+}
+
+int vm_copy_str_from_user(char *dst, unsigned long src, unsigned long max) {
+    for (unsigned long i = 0; i < max; i++) {
+        char c = 0;
+
+        if (vm_copy_from_user(&c, src + i, 1) != 0) {
+            return -ERR_FAULT;
+        }
+
+        dst[i] = c;
+
+        if (c == '\0') {
+            return (int)i;
+        }
+    }
+
+    return -ERR_2BIG;
 }

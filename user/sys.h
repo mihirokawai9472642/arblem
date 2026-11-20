@@ -63,9 +63,16 @@ static inline unsigned long sys_pages(void) {
     return sys_call(SYSCALL_PAGES, 0, 0, 0);
 }
 
-// Start the program called name (len bytes, no NUL needed). Returns its PID.
+// Start the program called name (len bytes, no NUL needed) with a
+// NULL-terminated argv array (or 0 to pass name alone). Returns its PID.
+static inline long sys_spawnv(const char *name, unsigned long len,
+                              const char *const *argv) {
+    return sys_call(SYSCALL_SPAWN, (long)name, (long)len, (long)argv);
+}
+
+// Start the program called name with no extra arguments. Returns its PID.
 static inline long sys_spawn(const char *name, unsigned long len) {
-    return sys_call(SYSCALL_SPAWN, (long)name, (long)len, 0);
+    return sys_spawnv(name, len, 0);
 }
 
 // Wait for child pid to exit and store its exit status in *status, unless
@@ -94,4 +101,10 @@ static inline long sys_dup(int fd) {
 // Returns 0, or a negative -ERR_* code.
 static inline long sys_pipe(int fds[2]) {
     return sys_call(SYSCALL_PIPE, (long)fds, 0, 0);
+}
+
+// Grow or shrink the user heap by delta bytes. Returns the previous program
+// break (a user address), or -ERR_NOMEM on failure.
+static inline long sys_sbrk(long delta) {
+    return sys_call(SYSCALL_SBRK, delta, 0, 0);
 }

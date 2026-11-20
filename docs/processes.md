@@ -15,8 +15,8 @@ There is no file system yet. Every user program is linked into the kernel image:
 3. `proc_images[]` in `kernel/proc.c` maps each program name to its two
    symbols.
 
-`proc_spawn(name)` looks the name up in that table. An unknown name gives
-`-ERR_NOENT`.
+`proc_spawn(name, argc, argv)` looks the name up in that table. An unknown name
+gives `-ERR_NOENT`.
 
 ## Checking the ELF file (`kernel/elf.c`)
 
@@ -38,13 +38,20 @@ the checks keep a broken build from corrupting kernel memory.
 1. `vm_create()` makes a new page table that shares the kernel mappings.
 2. For each `PT_LOAD` segment, `proc_load`:
    - Rejects the segment unless its `vaddr` is page aligned, does not overlap
-     the previous segment, and ends below the stack page.
+     the previous segment, and ends at or below `PROC_HEAP_LIMIT` (`0x7ffef000`,
+     leaving room for a 64 KiB stack and its 4 KiB guard page).
    - Rejects segments that are both writable and executable (W^X).
    - Allocates and maps one zeroed page at a time, then copies `filesz` bytes
      from the image. The rest of the segment (`.bss`) stays zero.
-3. Maps one stack page just below `0x80000000`.
+   - Advances `next` (the page-aligned address right after the segments), which
+     becomes the process's `heap_base`.
+3. Maps the top stack page (`0x7ffff000`-`0x80000000`) and calls
+   `proc_build_stack` to copy the `argv` strings and NULL-terminated pointer
+   array there, 16-byte aligned for the `lp64d` ABI. When `argc == 0` or
+   `argv == 0`, `proc_spawn` passes `{name}` so `argv[0]` is always set.
 4. Creates a thread with `proc_entry` as its entry function and the ELF entry
-   point as its argument.
+   point as its argument, then stores the initial `sp`, `argc`, and `argv` with
+   `thread_set_start` and the initial heap break with `thread_set_heap`.
 
 If any step fails, `vm_free` releases the page table and every page mapped so
 far, and the error is returned.
@@ -67,18 +74,20 @@ as well.
 ## Starting
 
 The new thread begins in `thread_entry`, which calls `proc_entry(entry)`, which
-calls `trap_enter_user(entry, 0x80000000)`. The thread is in U-mode from then
-on, and only comes back into the kernel through traps. The kernel stack stays
-with the thread, and serves every trap it takes.
+reads the saved `sp`, `argc`, and `argv` via `thread_get_start` and calls
+`trap_enter_user(entry, sp, argc, argv)`. The thread is in U-mode from then on,
+and only comes back into the kernel through traps (system calls, interrupts, or
+demand page faults). The kernel stack stays with the thread, and serves every
+trap it takes.
 
 ## Lifetime from user space
 
-| Step | System call            | Kernel side                                 |
-|------|------------------------|---------------------------------------------|
-| 1    | `spawn(name, len)`     | `proc_spawn` returns the new thread ID (PID) |
-| 2    | (program runs)         | Scheduled with every other thread           |
-| 3    | `exit(code)` or a fault | `thread_exit(code)`; a fault exits with -1 |
-| 4    | `wait(pid, &status)`   | `thread_wait` frees the child, returns the code |
+| Step | System call              | Kernel side                                 |
+|------|--------------------------|---------------------------------------------|
+| 1    | `spawn(name, len, argv)` | `proc_spawn` returns the new thread ID (PID) |
+| 2    | (program runs)           | Scheduled with every other thread           |
+| 3    | `exit(code)` or a fault  | `thread_exit(code)`; a fault exits with -1 |
+| 4    | `wait(pid, &status)`     | `thread_wait` frees the child, returns the code |
 
 `user/start.c` calls `exit` with `main`'s return value, so a program that
 returns from `main` exits normally.
