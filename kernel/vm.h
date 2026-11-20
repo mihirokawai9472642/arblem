@@ -19,6 +19,9 @@ int vm_map(unsigned long *root, unsigned long va, unsigned long pa,
 // the TLB. Does nothing if va is not mapped.
 void vm_unmap(unsigned long *root, unsigned long va);
 
+// Return 1 if va has a valid leaf mapping in root, 0 otherwise.
+int vm_is_mapped(unsigned long *root, unsigned long va);
+
 // Make root the active page table. 0 selects the kernel page table.
 void vm_switch(unsigned long *root);
 

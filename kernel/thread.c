@@ -11,6 +11,7 @@
 #include "page.h"
 #include "panic.h"
 #include "proc.h"
+#include "riscv.h"
 #include "vm.h"
 
 // Slots in the thread table, including the idle thread.
@@ -349,4 +350,48 @@ long thread_sbrk(long delta) {
     t->heap_end = new_end;
 
     return (long)old_end;
+}
+
+int thread_fault(unsigned long va) {
+    if (thread_current < 0) {
+        return -1;
+    }
+
+    struct thread *t = &thread_table[thread_current];
+
+    if (t->vm == 0) {
+        return -1;
+    }
+
+    int in_heap = va >= t->heap_base && va < t->heap_end;
+    int in_stack = va >= PROC_STACK_MIN && va < PROC_STACK_TOP;
+
+    if (!in_heap && !in_stack) {
+        return -1;
+    }
+
+    unsigned long page_va = va & ~(PAGE_SIZE - 1UL);
+
+    // If the page is already mapped, this was a permission fault (not a
+    // missing page). Refuse it rather than overwriting the PTE.
+    if (vm_is_mapped(t->vm, page_va)) {
+        return -1;
+    }
+
+    void *page = page_alloc();
+
+    if (page == 0) {
+        return -1;
+    }
+
+    if (vm_map(t->vm, page_va, (unsigned long)page, PAGE_SIZE,
+               PTE_R | PTE_W | PTE_U) != 0) {
+        page_free(page);
+
+        return -1;
+    }
+
+    __asm__ volatile("sfence.vma" : : : "memory");
+
+    return 0;
 }

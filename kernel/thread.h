@@ -68,4 +68,8 @@ void thread_set_heap(int id, unsigned long base);
 // the break (pages are allocated on demand); shrinking unmaps and frees pages
 // above the new break. Returns the previous break, or -ERR_NOMEM on failure.
 long thread_sbrk(long delta);
+
+// Handle a demand page fault at virtual address va for the current thread
+// (heap or stack growth). Returns 0 if a page was mapped, -1 otherwise.
+int thread_fault(unsigned long va);
 #endif
