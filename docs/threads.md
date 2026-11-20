@@ -15,6 +15,11 @@ struct thread {
     void *stack;             // kernel stack page; 0 = slot is free
     int parent;              // creator's ID; -1 = none
     int exit_code;           // valid once the thread has exited
+    unsigned long user_sp;   // initial U-mode sp
+    unsigned long user_argc; // initial U-mode a0 (argc)
+    unsigned long user_argv; // initial U-mode a1 (argv)
+    unsigned long heap_base; // first byte of the user heap (page aligned)
+    unsigned long heap_end;  // current program break (sbrk)
     struct file *files[THREAD_FILE_MAX];
 };
 ```
@@ -169,3 +174,20 @@ and `file_close` (`kernel/file.c`) manage the count; when `ref` reaches zero,
 `close` is called if non-null. Today there are two implementations: the static
 console (`kernel/console.c`, `close = 0`) and one-page ring-buffer pipes
 (`kernel/pipe.c`, freed once both ends close).
+
+## Heap and demand paging
+
+Each user thread records `[heap_base, heap_end)` (`kernel/proc.h` bounds it at
+`PROC_HEAP_LIMIT = 0x7ffef000`). `thread_set_heap(id, base)` initializes both to
+the page-aligned end of the ELF segments, and `thread_sbrk(delta)` moves
+`heap_end`: growing advances the break lazily without allocating physical pages,
+while shrinking calls `vm_unmap` to free every page wholly above the new break.
+
+`thread_fault(va)` handles missing pages inside `[heap_base, heap_end)` and the
+64 KiB stack range `[PROC_STACK_MIN, PROC_STACK_TOP)` (`0x7fff0000`-`0x80000000`),
+leaving `[0x7ffef000, 0x7fff0000)` unmapped as a stack guard page. It refuses
+addresses outside those ranges or pages that are already mapped (permission
+faults), and otherwise allocates a zeroed page and maps it `PTE_R | PTE_W | PTE_U`
+followed by `sfence.vma`. Both `trap_handler` (for U-mode load/store page
+faults) and `vm_check_user` (for syscalls touching unallocated heap or stack
+pages) call `thread_fault`.

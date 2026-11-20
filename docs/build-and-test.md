@@ -78,10 +78,11 @@ The smoke test boots the real kernel in QEMU and types into the shell:
    logs all output to `build/test.log`.
 2. Waits for the `> ` prompt.
 3. Types `pages`, `hello`, `pages`, `orphan` seven times, `regcheck`,
-   `pipecheck`, `pages`, `hello | upper`, `pages`, `count`, `pages`, `fault`,
-   `pages`, `foo`, `pages`, `poweroff`, each ending in `\r` as a terminal would
-   send it. `count` takes about a second, which gives the orphans' children time
-   to finish and be freed before the next `pages`.
+   `pipecheck`, `pages`, `hello | upper`, `pages`, `echo arg1 arg2 | upper`,
+   `pages`, `memcheck`, `pages`, `count`, `pages`, `fault`, `pages`, `foo`,
+   `pages`, `poweroff`, each ending in `\r` as a terminal would send it. `count`
+   takes about a second, which gives the orphans' children time to finish and be
+   freed before the next `pages`.
 4. Waits for QEMU to exit.
 
 It then checks the log:
@@ -96,8 +97,10 @@ It then checks the log:
 | `regs`     | `regcheck` printed `regs: ok`: `gp` and `tp` are saved per program, and a new program starts with them cleared |
 | `pipe`     | `pipecheck` printed `pipe: ok`: `close`, `dup`, and `pipe` pass all checks |
 | `pipeline` | `hello \| upper` printed `HELLO WORLD FROM U-MODE!`      |
+| `args`     | `echo arg1 arg2 \| upper` printed `ARG1 ARG2`            |
+| `mem`      | `memcheck` printed `mem: ok`: `sbrk`, demand paging, stack growth, and the guard page pass |
 | `orphan`   | `hello` ran 8 times: once alone, and once from each `orphan`, so orphans are freed and the thread table never fills up |
-| `pages`    | All seven `pages` outputs are identical, so nothing leaked |
+| `pages`    | All nine `pages` outputs are identical, so nothing leaked |
 | `poweroff` | QEMU exited with status 0                                |
 
 The test fails at once if the log contains `panic: `, or if an expected line
