@@ -6,7 +6,9 @@
 #define TRAP_FRAME_SIZE 160
 
 #ifndef __ASSEMBLER__
-// Enter U-mode at pc with stack pointer sp. Does not return; the thread comes
-// back into the kernel only through traps. Defined in trap.S.
-void trap_enter_user(unsigned long pc, unsigned long sp);
+// Enter U-mode at pc with stack pointer sp and initial arguments a0 = argc,
+// a1 = argv. Clears all other integer registers. Does not return; the thread
+// comes back into the kernel only through traps. Defined in trap.S.
+void trap_enter_user(unsigned long pc, unsigned long sp, unsigned long argc,
+                     unsigned long argv);
 #endif

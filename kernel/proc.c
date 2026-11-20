@@ -49,7 +49,7 @@ static const struct proc_image proc_images[] = {
 // Thread entry function of every process: enter U-mode at the ELF entry point
 // with the stack at the top of the user range. Does not return.
 static void proc_entry(unsigned long entry) {
-    trap_enter_user(entry, PROC_STACK_TOP);
+    trap_enter_user(entry, PROC_STACK_TOP, 0, 0);
 }
 
 // Allocate a zeroed page and map it at va. Returns the page's kernel address,

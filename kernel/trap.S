@@ -91,10 +91,13 @@ trap_entry:
 
     sret
 
-// void trap_enter_user(unsigned long pc, unsigned long sp)
+// void trap_enter_user(unsigned long pc, unsigned long sp,
+//                      unsigned long argc, unsigned long argv)
 //
-// Enter U-mode at pc with stack pointer sp, as if returning from a trap.
-// The current kernel sp becomes this thread's kernel stack for later traps.
+// Enter U-mode at pc with stack pointer sp, a0 = argc, and a1 = argv, as if
+// returning from a trap. Clears all other integer registers so kernel values
+// do not leak into the program. The current kernel sp becomes this thread's
+// kernel stack for later traps.
 trap_enter_user:
     // No trap may arrive while sscratch is non-zero in S-mode. In U-mode,
     // S-mode interrupts are enabled whatever SIE says.
@@ -107,10 +110,38 @@ trap_enter_user:
 
     csrw sscratch, sp
     mv sp, a1
+    mv a0, a2
+    mv a1, a3
 
-    // Start the program with gp and tp cleared, instead of whatever the
-    // previous program left in them.
+    // Clear every other integer register so the program does not see values
+    // left behind by the kernel or a previous thread.
+    mv ra, zero
     mv gp, zero
     mv tp, zero
+    mv t0, zero
+    mv t1, zero
+    mv t2, zero
+    mv s0, zero
+    mv s1, zero
+    mv a2, zero
+    mv a3, zero
+    mv a4, zero
+    mv a5, zero
+    mv a6, zero
+    mv a7, zero
+    mv s2, zero
+    mv s3, zero
+    mv s4, zero
+    mv s5, zero
+    mv s6, zero
+    mv s7, zero
+    mv s8, zero
+    mv s9, zero
+    mv s10, zero
+    mv s11, zero
+    mv t3, zero
+    mv t4, zero
+    mv t5, zero
+    mv t6, zero
 
     sret
