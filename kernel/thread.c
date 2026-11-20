@@ -24,12 +24,15 @@ void thread_entry(void);
 //   stack != 0, chan != 0            sleeping on chan
 //   stack != 0, chan == &thread_dead exited, waiting to be freed
 struct thread {
-    unsigned long sp;  // Saved kernel sp while switched out
-    void *chan;        // Wait channel, 0 if runnable
-    unsigned long *vm; // Page table root, 0 for the kernel's
-    void *stack;       // Kernel stack page, 0 if the slot is free
-    int parent;        // ID of the creating thread, -1 if none
-    int exit_code;     // Set by thread_exit
+    unsigned long sp;        // Saved kernel sp while switched out
+    void *chan;              // Wait channel, 0 if runnable
+    unsigned long *vm;       // Page table root, 0 for the kernel's
+    void *stack;             // Kernel stack page, 0 if the slot is free
+    int parent;              // ID of the creating thread, -1 if none
+    int exit_code;           // Set by thread_exit
+    unsigned long user_sp;   // Initial U-mode sp
+    unsigned long user_argc; // Initial U-mode a0 (argc)
+    unsigned long user_argv; // Initial U-mode a1 (argv)
     struct file *files[THREAD_FILE_MAX];
 };
 
@@ -87,6 +90,9 @@ int thread_create(void (*entry)(unsigned long), unsigned long arg,
     t->vm = vm;
     t->stack = stack;
     t->parent = thread_current;
+    t->user_sp = 0;
+    t->user_argc = 0;
+    t->user_argv = 0;
 
     // Inherit the creator's files. Threads created during boot get none.
     for (int fd = 0; fd < THREAD_FILE_MAX; fd++) {
@@ -268,4 +274,22 @@ int thread_close_fd(unsigned long fd) {
     file_close(f);
 
     return 0;
+}
+
+void thread_set_start(int id, unsigned long sp, unsigned long argc,
+                      unsigned long argv) {
+    struct thread *t = &thread_table[id];
+
+    t->user_sp = sp;
+    t->user_argc = argc;
+    t->user_argv = argv;
+}
+
+void thread_get_start(unsigned long *sp, unsigned long *argc,
+                      unsigned long *argv) {
+    struct thread *t = &thread_table[thread_current];
+
+    *sp = t->user_sp;
+    *argc = t->user_argc;
+    *argv = t->user_argv;
 }

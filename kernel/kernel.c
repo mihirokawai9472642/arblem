@@ -38,7 +38,7 @@ void kernel_main(unsigned long hartid, unsigned long dtb) {
     plic_enable(VIRT_UART0_IRQ);
     timer_init();
 
-    int shell = proc_spawn("shell");
+    int shell = proc_spawn("shell", 0, 0);
 
     if (shell < 0) {
         panic("cannot start the shell");

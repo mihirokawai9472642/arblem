@@ -26,3 +26,8 @@ void vm_free(unsigned long *root);
 // Return 0, or -1 if the check fails.
 int vm_copy_from_user(void *dst, unsigned long src, unsigned long len);
 int vm_copy_to_user(unsigned long dst, const void *src, unsigned long len);
+
+// Copy a NUL-terminated string from user address src into dst (up to max
+// bytes including the NUL). Returns the length (excluding NUL), -ERR_FAULT
+// on a bad address, or -ERR_2BIG if no NUL appears within max.
+int vm_copy_str_from_user(char *dst, unsigned long src, unsigned long max);

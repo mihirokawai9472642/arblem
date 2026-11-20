@@ -52,4 +52,12 @@ int thread_alloc_fd(struct file *f);
 // Close fd in the current thread and drop its file reference. Returns 0, or
 // -ERR_BADF if fd is out of range or unused.
 int thread_close_fd(unsigned long fd);
+
+// Record the initial U-mode stack pointer and argc/argv for thread id.
+void thread_set_start(int id, unsigned long sp, unsigned long argc,
+                      unsigned long argv);
+
+// Read the current thread's initial U-mode stack pointer and argc/argv.
+void thread_get_start(unsigned long *sp, unsigned long *argc,
+                      unsigned long *argv);
 #endif

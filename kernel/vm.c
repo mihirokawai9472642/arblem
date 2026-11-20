@@ -6,6 +6,7 @@
 // entries directly.
 
 #include "vm.h"
+#include "error.h"
 #include "page.h"
 #include "panic.h"
 #include "riscv.h"
@@ -232,4 +233,22 @@ int vm_copy_to_user(unsigned long dst, const void *src, unsigned long len) {
     csr_clear(sstatus, SSTATUS_SUM);
 
     return 0;
+}
+
+int vm_copy_str_from_user(char *dst, unsigned long src, unsigned long max) {
+    for (unsigned long i = 0; i < max; i++) {
+        char c = 0;
+
+        if (vm_copy_from_user(&c, src + i, 1) != 0) {
+            return -ERR_FAULT;
+        }
+
+        dst[i] = c;
+
+        if (c == '\0') {
+            return (int)i;
+        }
+    }
+
+    return -ERR_2BIG;
 }
