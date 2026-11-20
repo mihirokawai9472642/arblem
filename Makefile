@@ -22,7 +22,7 @@ QEMUFLAGS := -machine virt -nographic -bios default
 
 # Programs embedded in the kernel. Each also needs an entry in kernel/user.S
 # and kernel/proc.c; see docs/user.md.
-USER_PROGS := hello count fault orphan regcheck regclobber pipecheck upper shell
+USER_PROGS := hello count fault orphan regcheck regclobber pipecheck upper echo shell
 
 KERNEL_OBJS := $(patsubst %,$(BUILD)/%.o,$(wildcard kernel/*.S kernel/*.c))
 LIB_OBJS    := $(patsubst %,$(BUILD)/%.o,$(wildcard lib/*.c))

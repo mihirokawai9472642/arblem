@@ -21,6 +21,8 @@
 .global user_pipecheck_end
 .global user_upper
 .global user_upper_end
+.global user_echo
+.global user_echo_end
 .global user_shell
 .global user_shell_end
 
@@ -65,6 +67,11 @@ user_pipecheck_end:
 user_upper:
     .incbin "build/user/upper.elf"
 user_upper_end:
+
+.balign 8
+user_echo:
+    .incbin "build/user/echo.elf"
+user_echo_end:
 
 .balign 8
 user_shell:
