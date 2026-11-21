@@ -13,6 +13,7 @@
 #include "thread.h"
 #include "timer.h"
 #include "uart.h"
+#include "virtio_blk.h"
 #include "vm.h"
 
 // First byte after the kernel image, page aligned (kernel/linker.ld).
@@ -71,6 +72,15 @@ void kernel_main(unsigned long hartid, unsigned long dtb) {
     uart_init(info.uart.base, info.uart.irq);
     plic_init(info.plic.base);
     plic_enable(info.uart.irq);
+
+    if (virtio_blk_init(&info) == 0) {
+        plic_enable(virtio_blk_irq());
+        kprintf("Disk: %x sectors (irq %x)\n", virtio_blk_sectors(),
+                (unsigned long)virtio_blk_irq());
+    } else {
+        kprintf("Disk: none\n");
+    }
+
     timer_init(info.timebase_freq);
 
     int shell = proc_spawn("shell", 0, 0);

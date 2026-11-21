@@ -7,6 +7,7 @@ TARGET  := --target=riscv64-unknown-elf -march=rv64gc -mabi=lp64d -mcmodel=medan
 
 BUILD   := build
 KERNEL  := $(BUILD)/kernel.elf
+DISK    := $(BUILD)/disk.img
 
 CC      := clang
 LD      := ld.lld
@@ -18,7 +19,11 @@ CFLAGS    := $(TARGET) -std=c17 -Wall -Wextra -g -ffreestanding -Iinc
 ASFLAGS   := $(TARGET) -g -Iinc
 
 # One hart on the virt machine, OpenSBI as firmware, console on stdio.
-QEMUFLAGS := -machine virt -nographic -bios default
+# Force modern VirtIO 1.0+ (MMIO v2) instead of legacy v1.
+QEMUFLAGS := -machine virt -nographic -bios default \
+             -global virtio-mmio.force-legacy=false
+BLKFLAGS  := -drive file=$(DISK),if=none,format=raw,id=hd0 \
+             -device virtio-blk-device,drive=hd0,bus=virtio-mmio-bus.0
 
 # Programs embedded in the kernel. Each also needs an entry in kernel/user.S
 # and kernel/proc.c; see docs/user.md.
@@ -40,16 +45,20 @@ MAKEFLAGS += --no-builtin-rules
 
 all: $(KERNEL) $(BUILD)/compile_commands.json
 
-run: $(KERNEL)
-	$(QEMU) $(QEMUFLAGS) -kernel $(KERNEL)
+run: $(KERNEL) $(DISK)
+	$(QEMU) $(QEMUFLAGS) $(BLKFLAGS) -kernel $(KERNEL)
 
-test: $(KERNEL)
-	sh test/smoke.sh $(QEMU) $(QEMUFLAGS) -kernel $(KERNEL)
+test: $(KERNEL) $(DISK)
+	sh test/smoke.sh $(QEMU) $(QEMUFLAGS) $(BLKFLAGS) -kernel $(KERNEL)
 
 # Boot halted at the first instruction, waiting for a debugger on port 1234.
 # Attach with "make lldb" from another terminal.
-debug: $(KERNEL)
-	$(QEMU) $(QEMUFLAGS) -kernel $(KERNEL) -s -S
+debug: $(KERNEL) $(DISK)
+	$(QEMU) $(QEMUFLAGS) $(BLKFLAGS) -kernel $(KERNEL) -s -S
+
+$(DISK):
+	@mkdir -p $(dir $@)
+	truncate -s 1M $@
 
 lldb: $(KERNEL)
 	lldb $(KERNEL) -o 'gdb-remote 1234'

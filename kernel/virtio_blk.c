@@ -1,0 +1,200 @@
+// Modern VirtIO 1.0+ (MMIO v2) block device driver. Uses a single split
+// virtqueue (queue 0).
+
+#include "virtio_blk.h"
+#include "fdt.h"
+
+// VirtIO MMIO v2 register offsets (all 32-bit little-endian).
+#define VIRTIO_MMIO_MAGIC               0x000
+#define VIRTIO_MMIO_VERSION             0x004
+#define VIRTIO_MMIO_DEVICE_ID           0x008
+#define VIRTIO_MMIO_DEVICE_FEATURES     0x010
+#define VIRTIO_MMIO_DEVICE_FEATURES_SEL 0x014
+#define VIRTIO_MMIO_DRIVER_FEATURES     0x020
+#define VIRTIO_MMIO_DRIVER_FEATURES_SEL 0x024
+#define VIRTIO_MMIO_QUEUE_SEL           0x030
+#define VIRTIO_MMIO_QUEUE_NUM_MAX       0x034
+#define VIRTIO_MMIO_QUEUE_NUM           0x038
+#define VIRTIO_MMIO_QUEUE_READY         0x044
+#define VIRTIO_MMIO_STATUS              0x070
+#define VIRTIO_MMIO_QUEUE_DESC_LOW      0x080
+#define VIRTIO_MMIO_QUEUE_DESC_HIGH     0x084
+#define VIRTIO_MMIO_QUEUE_DRIVER_LOW    0x090
+#define VIRTIO_MMIO_QUEUE_DRIVER_HIGH   0x094
+#define VIRTIO_MMIO_QUEUE_DEVICE_LOW    0x0a0
+#define VIRTIO_MMIO_QUEUE_DEVICE_HIGH   0x0a4
+#define VIRTIO_MMIO_CONFIG              0x100
+
+#define VIRTIO_MAGIC          0x74726976U // "virt" in little-endian
+#define VIRTIO_VERSION_MODERN 2U
+#define VIRTIO_DEV_BLK        2U
+
+// Device status bits (VirtIO spec 2.1).
+#define VIRTIO_STATUS_ACKNOWLEDGE (1U << 0)
+#define VIRTIO_STATUS_DRIVER      (1U << 1)
+#define VIRTIO_STATUS_DRIVER_OK   (1U << 2)
+#define VIRTIO_STATUS_FEATURES_OK (1U << 3)
+#define VIRTIO_STATUS_FAILED      (1U << 7)
+
+// VIRTIO_F_VERSION_1 is feature bit 32: bit 0 of feature word 1.
+#define VIRTIO_F_VERSION_1_BIT (1U << 0)
+
+// Number of descriptors in requestq (power of two; one block request uses 3).
+#define VIRTIO_QUEUE_SIZE 8
+
+// Split virtqueue layouts (VirtIO spec 2.7).
+struct virtq_desc {
+    unsigned long addr;
+    unsigned int len;
+    unsigned short flags;
+    unsigned short next;
+};
+
+struct virtq_avail {
+    unsigned short flags;
+    unsigned short idx;
+    unsigned short ring[VIRTIO_QUEUE_SIZE];
+};
+
+struct virtq_used_elem {
+    unsigned int id;
+    unsigned int len;
+};
+
+struct virtq_used {
+    unsigned short flags;
+    unsigned short idx;
+    struct virtq_used_elem ring[VIRTIO_QUEUE_SIZE];
+};
+
+_Static_assert(sizeof(struct virtq_desc) == 16, "virtq_desc must be 16 bytes");
+_Static_assert(sizeof(struct virtq_used_elem) == 8,
+               "virtq_used_elem must be 8 bytes");
+
+// Alignment requirements from VirtIO spec 2.7: desc 16, avail 2, used 4.
+// Placed in .bss (zeroed at boot and identity-mapped, so virtual == physical).
+static _Alignas(16) struct virtq_desc blk_desc[VIRTIO_QUEUE_SIZE];
+static _Alignas(2) struct virtq_avail blk_avail;
+static _Alignas(4) struct virtq_used blk_used;
+
+static unsigned long blk_base;
+static unsigned int blk_irq_num;
+static unsigned long blk_sectors;
+
+static unsigned int mmio_read(unsigned long base, unsigned long off) {
+    return *(volatile unsigned int *)(base + off);
+}
+
+static void mmio_write(unsigned long base, unsigned long off,
+                       unsigned int val) {
+    *(volatile unsigned int *)(base + off) = val;
+}
+
+static int virtio_blk_setup(unsigned long base, unsigned int irq) {
+    // Reset the device.
+    mmio_write(base, VIRTIO_MMIO_STATUS, 0);
+
+    unsigned int status = VIRTIO_STATUS_ACKNOWLEDGE;
+    mmio_write(base, VIRTIO_MMIO_STATUS, status);
+
+    status |= VIRTIO_STATUS_DRIVER;
+    mmio_write(base, VIRTIO_MMIO_STATUS, status);
+
+    // Negotiate features: require VIRTIO_F_VERSION_1 and decline all optional
+    // block features (read-only, event_idx, indirect descriptors, etc.).
+    mmio_write(base, VIRTIO_MMIO_DEVICE_FEATURES_SEL, 1);
+
+    if ((mmio_read(base, VIRTIO_MMIO_DEVICE_FEATURES) &
+         VIRTIO_F_VERSION_1_BIT) == 0) {
+        mmio_write(base, VIRTIO_MMIO_STATUS, status | VIRTIO_STATUS_FAILED);
+        return -1;
+    }
+
+    mmio_write(base, VIRTIO_MMIO_DRIVER_FEATURES_SEL, 0);
+    mmio_write(base, VIRTIO_MMIO_DRIVER_FEATURES, 0);
+    mmio_write(base, VIRTIO_MMIO_DRIVER_FEATURES_SEL, 1);
+    mmio_write(base, VIRTIO_MMIO_DRIVER_FEATURES, VIRTIO_F_VERSION_1_BIT);
+
+    status |= VIRTIO_STATUS_FEATURES_OK;
+    mmio_write(base, VIRTIO_MMIO_STATUS, status);
+
+    if ((mmio_read(base, VIRTIO_MMIO_STATUS) & VIRTIO_STATUS_FEATURES_OK) ==
+        0) {
+        mmio_write(base, VIRTIO_MMIO_STATUS, status | VIRTIO_STATUS_FAILED);
+        return -1;
+    }
+
+    // Configure requestq (queue 0).
+    mmio_write(base, VIRTIO_MMIO_QUEUE_SEL, 0);
+
+    if (mmio_read(base, VIRTIO_MMIO_QUEUE_READY) != 0) {
+        mmio_write(base, VIRTIO_MMIO_STATUS, status | VIRTIO_STATUS_FAILED);
+        return -1;
+    }
+
+    unsigned int max_queue = mmio_read(base, VIRTIO_MMIO_QUEUE_NUM_MAX);
+
+    if (max_queue == 0 || max_queue < VIRTIO_QUEUE_SIZE) {
+        mmio_write(base, VIRTIO_MMIO_STATUS, status | VIRTIO_STATUS_FAILED);
+        return -1;
+    }
+
+    mmio_write(base, VIRTIO_MMIO_QUEUE_NUM, VIRTIO_QUEUE_SIZE);
+
+    unsigned long desc_pa = (unsigned long)blk_desc;
+    unsigned long avail_pa = (unsigned long)&blk_avail;
+    unsigned long used_pa = (unsigned long)&blk_used;
+
+    mmio_write(base, VIRTIO_MMIO_QUEUE_DESC_LOW, (unsigned int)desc_pa);
+    mmio_write(base, VIRTIO_MMIO_QUEUE_DESC_HIGH,
+               (unsigned int)(desc_pa >> 32));
+    mmio_write(base, VIRTIO_MMIO_QUEUE_DRIVER_LOW, (unsigned int)avail_pa);
+    mmio_write(base, VIRTIO_MMIO_QUEUE_DRIVER_HIGH,
+               (unsigned int)(avail_pa >> 32));
+    mmio_write(base, VIRTIO_MMIO_QUEUE_DEVICE_LOW, (unsigned int)used_pa);
+    mmio_write(base, VIRTIO_MMIO_QUEUE_DEVICE_HIGH,
+               (unsigned int)(used_pa >> 32));
+
+    mmio_write(base, VIRTIO_MMIO_QUEUE_READY, 1);
+
+    // Read 64-bit disk capacity (in 512-byte sectors) from config space.
+    unsigned long cap_lo = mmio_read(base, VIRTIO_MMIO_CONFIG + 0);
+    unsigned long cap_hi = mmio_read(base, VIRTIO_MMIO_CONFIG + 4);
+
+    blk_sectors = cap_lo | (cap_hi << 32);
+    blk_base = base;
+    blk_irq_num = irq;
+
+    status |= VIRTIO_STATUS_DRIVER_OK;
+    mmio_write(base, VIRTIO_MMIO_STATUS, status);
+
+    return 0;
+}
+
+int virtio_blk_init(const struct fdt_info *info) {
+    for (int i = 0; i < info->virtio_count; i++) {
+        unsigned long base = info->virtio[i].base;
+
+        if (info->virtio[i].size < 0x200) {
+            continue;
+        }
+
+        if (mmio_read(base, VIRTIO_MMIO_MAGIC) != VIRTIO_MAGIC ||
+            mmio_read(base, VIRTIO_MMIO_VERSION) != VIRTIO_VERSION_MODERN ||
+            mmio_read(base, VIRTIO_MMIO_DEVICE_ID) != VIRTIO_DEV_BLK) {
+            continue;
+        }
+
+        return virtio_blk_setup(base, info->virtio[i].irq);
+    }
+
+    return -1;
+}
+
+unsigned int virtio_blk_irq(void) {
+    return blk_irq_num;
+}
+
+unsigned long virtio_blk_sectors(void) {
+    return blk_sectors;
+}
