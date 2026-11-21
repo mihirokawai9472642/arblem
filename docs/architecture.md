@@ -42,12 +42,14 @@ RISC-V has three privilege levels, and Arblem uses all of them:
           |                |                   |
    syscall.c          timer.c / plic.c     user faults
    (read, write,      (interrupts)         -> thread_exit(-1)
-    spawn, wait...)        |
+    blk_read/write,        |
+    spawn, wait...)        v
      |      |              v
      |   file.h/.c    thread.c / thread.S  scheduling, sleep/wakeup
      |   console.c         |
      |   pipe.c            |
-     |   uart.c            v
+     |   uart.c            |
+     |   virtio_blk.c      v
      v                 vm.c  page.c        address spaces, pages
    proc.c  elf.c  user.S                   (embedded user ELF files)
 ```
@@ -56,6 +58,7 @@ RISC-V has three privilege levels, and Arblem uses all of them:
 |--------------|-----------------------------------------------------------------------|
 | `boot.S`     | First instructions: set up a stack, clear `.bss`, install `stvec`     |
 | `kernel.c`   | Initialize subsystems in order and start the shell                    |
+| `fdt.c`      | Parse the device tree for RAM, timer frequency, and MMIO devices      |
 | `page.c`     | Hand out and take back 4 KiB physical pages                           |
 | `vm.c`       | Build Sv39 page tables and copy data to and from user memory          |
 | `trap.S/.c`  | Save registers on a trap, dispatch it, and return with `sret`         |
@@ -66,6 +69,7 @@ RISC-V has three privilege levels, and Arblem uses all of them:
 | `console.c`  | The console `struct file`, backed by the UART                         |
 | `pipe.c`     | One-page ring-buffer pipes (`struct file` read/write ends)            |
 | `uart.c`     | 16550 UART driver with receive interrupts                             |
+| `virtio_blk.c` | Modern VirtIO MMIO v2 block device driver                           |
 | `plic.c`     | Platform-Level Interrupt Controller: enable, claim, complete          |
 | `timer.c`    | Periodic timer interrupt through the `stimecmp` CSR                   |
 | `sbi.c`      | Calls into OpenSBI                                                    |
@@ -95,8 +99,8 @@ of them, so changing one of them means revisiting many files.
    never races an interrupt handler, and sleep/wakeup cannot lose a wakeup.
 3. **Kernel memory is identity-mapped.** Every page table maps physical RAM and
    the devices at the same virtual addresses, without `PTE_U`. A kernel
-   pointer is also a physical address, which is what SBI calls and page
-   table entries need.
+   pointer is also a physical address, which is what SBI calls, VirtIO DMA
+   descriptors, and page table entries need.
 4. **User memory lives in one 1 GiB slot.** Every user mapping is between
    `0x40000000` and `0x80000000`, which is exactly one entry of the top-level
    page table. The kernel's entries are shared by all page tables, and the

@@ -52,20 +52,24 @@ Arblem only creates 4 KiB leaf pages. It never uses 2 MiB or 1 GiB megapages.
 
 ## Kernel mappings (`vm_init`)
 
-`vm_init(ram_end)` builds one kernel page table that identity-maps (virtual
-address = physical address):
+`vm_init(const struct fdt_info *info)` builds one kernel page table that
+identity-maps (virtual address = physical address) the devices and RAM found in
+the device tree:
 
-| Range                               | Permissions | Contents                     |
-|-------------------------------------|-------------|------------------------------|
-| PLIC, `0x0c000000` + 6 MiB          | `R W`       | Interrupt controller         |
-| UART0, `0x10000000` + 4 KiB         | `R W`       | Serial port                  |
-| `__kernel_start` to `__text_end`    | `R X`       | Kernel code                  |
-| `__text_end` to `__rodata_end`      | `R`         | Constants, embedded user ELFs |
-| `__rodata_end` to `ram_end`         | `R W`       | Data, `.bss`, free pages     |
+| Range                                | Permissions | Contents                                         |
+|--------------------------------------|-------------|--------------------------------------------------|
+| PLIC (from DTB, `0x0c000000` + 6 MiB) | `R W`      | Interrupt controller                             |
+| UART (from DTB, `0x10000000` + 4 KiB) | `R W`      | Serial port (rounded outward to 4 KiB page bounds) |
+| VirtIO MMIO slots (from DTB, 8 x 4 KiB) | `R W`    | VirtIO MMIO registers                            |
+| `__kernel_start` to `__text_end`     | `R X`       | Kernel code                                      |
+| `__text_end` to `__rodata_end`       | `R`         | Constants, embedded user ELFs                    |
+| `__rodata_end` to `ram_end`          | `R W`       | Data, `.bss`, free pages (below/above DTB), and reserved DTB pages |
 
-None of these have `U`, so user programs cannot touch them. The linker script
-page-aligns `__text_end` and `__rodata_end` so that the three kernel ranges
-never share a page, which keeps the kernel W^X.
+`vm_map_mmio` rounds MMIO ranges outward to 4 KiB page boundaries (for instance,
+the UART's DTB `reg` size is `0x100` bytes). None of these mappings have `U`, so
+user programs cannot touch them. The linker script page-aligns `__text_end` and
+`__rodata_end` so that the three kernel ranges never share a page, which keeps
+the kernel W^X.
 
 `vm_init` finishes by writing `satp` and running `sfence.vma`. The next
 instruction fetch is already translated, and works only because the code is
@@ -91,7 +95,7 @@ empty. So:
 The layout of a user address space:
 
 ```
-0x00000000 - 0x3fffffff  kernel entry 0: PLIC and UART (no U)
+0x00000000 - 0x3fffffff  kernel entry 0: PLIC, UART, and VirtIO MMIO (no U)
 0x40000000               .text            R X U
                          .rodata          R U          page aligned
                          .data, .bss      R W U        page aligned

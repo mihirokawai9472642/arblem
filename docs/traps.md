@@ -1,7 +1,7 @@
 # Traps
 
 A *trap* is any transfer of control into the kernel: an interrupt (timer,
-UART), a system call (`ecall` from U-mode), or an exception (page fault,
+UART, VirtIO-blk), a system call (`ecall` from U-mode), or an exception (page fault,
 illegal instruction, breakpoint). All of them enter the kernel at
 `trap_entry` in `kernel/trap.S`, because `boot.S` writes that address into
 `stvec` in direct mode.
@@ -94,7 +94,7 @@ back just before returning, makes `thread_yield` safe inside a trap.
 | Cause                                 | Action                                                          |
 |---------------------------------------|-----------------------------------------------------------------|
 | Supervisor timer interrupt            | `timer_interrupt()`, then `thread_yield()`                      |
-| Supervisor external interrupt         | Claim the IRQ from the PLIC, call `uart_interrupt()` if it is the UART, complete the IRQ, then `thread_yield()` |
+| Supervisor external interrupt         | Claim the IRQ from the PLIC; if non-zero, call `uart_interrupt()` for `uart_irq()` or `virtio_blk_interrupt()` for `virtio_blk_irq()`, then complete the IRQ; finally `thread_yield()` |
 | `ecall` from U-mode (cause 8)         | `syscall_handle(a7, a0, a1, a2)`, store the result in the frame's `a0`, and return to `sepc + 4` |
 | Load or store page fault from U-mode (cause 13 or 15) | Call `thread_fault(tval)`. If it maps a heap or stack page, resume at `sepc` to retry the instruction; otherwise print the trap and end the program with `thread_exit(-1)` |
 | Breakpoint from S-mode                | Print the trap, skip the `ebreak` (2 or 4 bytes), and continue  |

@@ -108,3 +108,13 @@ static inline long sys_pipe(int fds[2]) {
 static inline long sys_sbrk(long delta) {
     return sys_call(SYSCALL_SBRK, delta, 0, 0);
 }
+
+// Read one 512-byte disk sector into buf. Returns 0, -ERR_IO, or -ERR_FAULT.
+static inline long sys_blk_read(unsigned long sector, void *buf) {
+    return sys_call(SYSCALL_BLK_READ, (long)sector, (long)buf, 0);
+}
+
+// Write one 512-byte disk sector from buf. Returns 0, -ERR_IO, or -ERR_FAULT.
+static inline long sys_blk_write(unsigned long sector, const void *buf) {
+    return sys_call(SYSCALL_BLK_WRITE, (long)sector, (long)buf, 0);
+}

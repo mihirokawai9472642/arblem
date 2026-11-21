@@ -3,6 +3,7 @@
 
 #include "console.h"
 #include "fd.h"
+#include "fdt.h"
 #include "kprintf.h"
 #include "page.h"
 #include "panic.h"
@@ -12,7 +13,7 @@
 #include "thread.h"
 #include "timer.h"
 #include "uart.h"
-#include "virt.h"
+#include "virtio_blk.h"
 #include "vm.h"
 
 // First byte after the kernel image, page aligned (kernel/linker.ld).
@@ -27,16 +28,60 @@ void kernel_main(unsigned long hartid, unsigned long dtb) {
     kprintf("DTB: %x\n", dtb);
     kprintf("SBI: %x\n", sbi_spec_version());
 
-    // The device tree is not parsed yet: OpenSBI places it near the top of
-    // RAM, so its address stands in for the end of usable memory.
-    // See docs/known-issues.md.
-    page_init((unsigned long)__kernel_end, dtb);
-    vm_init(dtb);
+    struct fdt_info info;
 
-    uart_init();
-    plic_init();
-    plic_enable(VIRT_UART0_IRQ);
-    timer_init();
+    if (fdt_parse(dtb, &info) != 0) {
+        panic("invalid device tree");
+    }
+
+    kprintf("RAM: %x + %x\n", info.ram_base, info.ram_size);
+    kprintf("UART: %x (irq %x)\n", info.uart.base,
+            (unsigned long)info.uart.irq);
+    kprintf("PLIC: %x + %x\n", info.plic.base, info.plic.size);
+    kprintf("VirtIO: %x slots\n", (unsigned long)info.virtio_count);
+
+    if (info.ram_size == 0 || info.uart.size == 0 || info.plic.size == 0 ||
+        info.timebase_freq < 100) {
+        panic("incomplete device tree");
+    }
+
+    unsigned long kernel_end = (unsigned long)__kernel_end;
+    unsigned long ram_end =
+        (info.ram_base + info.ram_size) & ~(PAGE_SIZE - 1UL);
+    unsigned long dtb_start = dtb & ~(PAGE_SIZE - 1UL);
+    unsigned long dtb_end =
+        (dtb + info.dtb_size + PAGE_SIZE - 1UL) & ~(PAGE_SIZE - 1UL);
+
+    if (ram_end <= kernel_end) {
+        panic("no usable RAM");
+    }
+
+    // Reserve the DTB pages, and add usable RAM below and above the DTB.
+    if (dtb_start >= kernel_end && dtb_start < ram_end) {
+        page_init(kernel_end, dtb_start);
+
+        if (dtb_end < ram_end) {
+            page_init(dtb_end, ram_end);
+        }
+    } else {
+        page_init(kernel_end, ram_end);
+    }
+
+    vm_init(&info);
+
+    uart_init(info.uart.base, info.uart.irq);
+    plic_init(info.plic.base);
+    plic_enable(info.uart.irq);
+
+    if (virtio_blk_init(&info) == 0) {
+        plic_enable(virtio_blk_irq());
+        kprintf("Disk: %x sectors (irq %x)\n", virtio_blk_sectors(),
+                (unsigned long)virtio_blk_irq());
+    } else {
+        kprintf("Disk: none\n");
+    }
+
+    timer_init(info.timebase_freq);
 
     int shell = proc_spawn("shell", 0, 0);
 

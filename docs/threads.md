@@ -110,6 +110,8 @@ while (!condition) {
 | Channel             | Sleeps on it                     | Woken by                                     |
 |---------------------|----------------------------------|----------------------------------------------|
 | `&uart_rx_wait`     | A thread reading the console     | The UART receive interrupt                   |
+| `&blk_busy_wait`    | A thread waiting for the block device | Completion of the active `virtio_blk_rw` request |
+| `&blk_done_wait`    | A thread waiting for block DMA   | The VirtIO-blk interrupt (`virtio_blk_interrupt`) |
 | `&p->read_end`      | A thread reading an empty pipe   | `pipe_write` or closing the last write end   |
 | `&p->write_end`     | A thread writing a full pipe     | `pipe_read` or closing the last read end     |
 | `&thread_exit_wait` | A parent in `thread_wait`        | Any thread calling `thread_exit`             |

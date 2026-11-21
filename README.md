@@ -26,13 +26,14 @@ exit: -1
 ## Features
 
 - S-mode kernel on OpenSBI, using SBI for kernel messages and shutdown
+- Device tree (DTB) parsing (`kernel/fdt.c`) for RAM, timer frequency, and MMIO device discovery
 - Sv39 paging, with a separate address space per program, W^X mappings, and demand-paged heap and stack (up to 64 KiB with a guard page)
 - Preemptive round-robin threads, driven by a 100 Hz timer
-- Interrupt-driven UART input through the PLIC
+- Interrupt-driven UART input and Modern VirtIO-blk (MMIO v2) disk I/O with DMA through the PLIC
 - User programs loaded from ELF files embedded in the kernel image, with `argc`/`argv` argument passing
-- System calls: `read`, `write`, `close`, `dup`, `pipe`, `exit`, `spawn`, `wait`, `ticks`, `pages`, `sbrk`, `poweroff`
+- System calls: `read`, `write`, `close`, `dup`, `pipe`, `exit`, `spawn`, `wait`, `ticks`, `pages`, `sbrk`, `blk_read`, `blk_write`, `poweroff`
 - Per-process reference-counted file descriptors, with the console and pipes
-- A smoke test that boots the system in QEMU and checks the shell's output
+- A smoke test that boots the system in QEMU and checks the shell's output and disk persistence
 
 ## Getting started
 
@@ -100,6 +101,7 @@ and SSH are not available in the container.
 | `upper`        | Convert stdin to uppercase on stdout                 |
 | `echo`         | Print command-line arguments                         |
 | `memcheck`     | Check `sbrk`, demand paging, stack growth, and guard |
+| `blkcheck`     | Check VirtIO-blk sector read/write and error handling |
 | `cmd1 \| cmd2` | Connect `cmd1`'s stdout to `cmd2`'s stdin with a pipe |
 
 ## Layout
@@ -130,7 +132,7 @@ The [docs](docs/README.md) explain how the kernel works, in reading order:
 - [Threads](docs/threads.md): context switch, scheduling, sleep/wakeup, exit/wait
 - [Processes](docs/processes.md): loading ELF programs, `spawn`, and `wait`
 - [System calls](docs/syscalls.md): calling convention and reference
-- [Devices](docs/devices.md): UART, PLIC, timer, and SBI
+- [Devices](docs/devices.md): device tree, UART, PLIC, timer, VirtIO-blk, and SBI
 - [User programs](docs/user.md): runtime, shell, and adding a program
 - [Build and test](docs/build-and-test.md): Makefile, smoke test, and debugging
 - [Known issues](docs/known-issues.md): bugs and limits of the current design

@@ -12,6 +12,7 @@
 #include "sysnum.h"
 #include "thread.h"
 #include "timer.h"
+#include "virtio_blk.h"
 #include "vm.h"
 
 // Size of the kernel buffer for a program name, including the NUL.
@@ -175,6 +176,31 @@ static long syscall_wait(unsigned long pid, unsigned long status) {
     return 0;
 }
 
+static long syscall_blk_read(unsigned long sector, unsigned long buf) {
+    char kbuf[VIRTIO_BLK_SECTOR_SIZE];
+    int err = virtio_blk_read(sector, kbuf);
+
+    if (err < 0) {
+        return err;
+    }
+
+    if (vm_copy_to_user(buf, kbuf, sizeof(kbuf)) != 0) {
+        return -ERR_FAULT;
+    }
+
+    return 0;
+}
+
+static long syscall_blk_write(unsigned long sector, unsigned long buf) {
+    char kbuf[VIRTIO_BLK_SECTOR_SIZE];
+
+    if (vm_copy_from_user(kbuf, buf, sizeof(kbuf)) != 0) {
+        return -ERR_FAULT;
+    }
+
+    return virtio_blk_write(sector, kbuf);
+}
+
 long syscall_handle(unsigned long num, unsigned long arg0, unsigned long arg1,
                     unsigned long arg2) {
     if (num == SYSCALL_WRITE) {
@@ -226,6 +252,14 @@ long syscall_handle(unsigned long num, unsigned long arg0, unsigned long arg1,
 
     if (num == SYSCALL_SBRK) {
         return thread_sbrk((long)arg0);
+    }
+
+    if (num == SYSCALL_BLK_READ) {
+        return syscall_blk_read(arg0, arg1);
+    }
+
+    if (num == SYSCALL_BLK_WRITE) {
+        return syscall_blk_write(arg0, arg1);
     }
 
     return -ERR_NOSYS;

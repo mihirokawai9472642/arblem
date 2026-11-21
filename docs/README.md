@@ -19,7 +19,7 @@ the ones before it.
 | [Threads](threads.md)                   | Thread table, context switch, scheduling, sleep and wakeup    |
 | [Processes](processes.md)               | Embedded ELF programs, loading, `spawn` and `wait`            |
 | [System calls](syscalls.md)             | Calling convention, error codes, and every system call        |
-| [Devices](devices.md)                   | UART, PLIC, timer, and the SBI calls the kernel uses          |
+| [Devices](devices.md)                   | Device tree, UART, PLIC, timer, VirtIO-blk, and the SBI calls the kernel uses |
 | [User programs](user.md)                | The user runtime, the shell, and adding a new program         |
 | [Build and test](build-and-test.md)     | Makefile, smoke test, and debugging with QEMU and LLDB        |
 | [Known issues](known-issues.md)         | Bugs and limits of the current design                         |
@@ -35,7 +35,7 @@ the ones before it.
 | Processes       | `kernel/proc.c`, `kernel/elf.c`, `kernel/user.S`                          |
 | System calls    | `kernel/syscall.c`, `inc/sysnum.h`, `inc/error.h`, `user/sys.h`           |
 | Files           | `kernel/file.h`, `kernel/file.c`, `kernel/console.c`, `kernel/pipe.c`, `inc/fd.h` |
-| Devices         | `kernel/uart.c`, `kernel/plic.c`, `kernel/timer.c`, `kernel/virt.h`       |
+| Devices         | `kernel/fdt.c`, `kernel/uart.c`, `kernel/plic.c`, `kernel/timer.c`, `kernel/virtio_blk.c` |
 | Firmware calls  | `kernel/sbi.c`, `kernel/kprintf.c`, `kernel/panic.c`                      |
 | User programs   | `user/*.c`, `user/linker.ld`                                              |
 | Shared library  | `lib/str.c`, `inc/str.h`                                                  |
