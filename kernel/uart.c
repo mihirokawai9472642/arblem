@@ -4,16 +4,16 @@
 
 #include "uart.h"
 #include "thread.h"
-#include "virt.h"
+
+static unsigned long uart_base;
+static unsigned int uart_irq_num;
 
 // Registers, at byte offsets from the base address. RBR and THR share an
 // offset: reads come from RBR, writes go to THR.
-#define UART_RBR ((volatile unsigned char *)(VIRT_UART0 + 0)) // Receive buffer
-#define UART_THR                                                               \
-    ((volatile unsigned char *)(VIRT_UART0 + 0)) // Transmit holding
-#define UART_IER                                                               \
-    ((volatile unsigned char *)(VIRT_UART0 + 1)) // Interrupt enable
-#define UART_LSR      ((volatile unsigned char *)(VIRT_UART0 + 5)) // Line status
+#define UART_RBR      ((volatile unsigned char *)(uart_base + 0)) // Receive buffer
+#define UART_THR      ((volatile unsigned char *)(uart_base + 0)) // Transmit holding
+#define UART_IER      ((volatile unsigned char *)(uart_base + 1)) // Interrupt enable
+#define UART_LSR      ((volatile unsigned char *)(uart_base + 5)) // Line status
 #define UART_IER_RDI  (1 << 0) // Interrupt when received data is available
 #define UART_LSR_DR   (1 << 0) // A received byte is waiting in RBR
 #define UART_LSR_THRE (1 << 5) // THR is empty and ready for the next byte
@@ -28,8 +28,14 @@ static unsigned long uart_rx_wpos;
 // Wait channel for threads in uart_getc.
 static char uart_rx_wait;
 
-void uart_init(void) {
+void uart_init(unsigned long base, unsigned int irq) {
+    uart_base = base;
+    uart_irq_num = irq;
     *UART_IER = UART_IER_RDI;
+}
+
+unsigned int uart_irq(void) {
+    return uart_irq_num;
 }
 
 void uart_putc(char c) {

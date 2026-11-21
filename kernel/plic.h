@@ -1,7 +1,8 @@
 #pragma once
 
-// Accept every enabled IRQ and enable external interrupts (sie.SEIE).
-void plic_init(void);
+// Set the PLIC MMIO base address, accept every enabled IRQ, and enable
+// external interrupts (sie.SEIE).
+void plic_init(unsigned long base);
 
 // Let irq interrupt this hart in S-mode.
 void plic_enable(unsigned int irq);

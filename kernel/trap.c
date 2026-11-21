@@ -9,7 +9,6 @@
 #include "thread.h"
 #include "timer.h"
 #include "uart.h"
-#include "virt.h"
 
 // Registers saved by trap_entry, at the offsets trap.S uses. sp is the stack
 // pointer of the interrupted code. gp and tp belong to the user program: the
@@ -39,7 +38,7 @@ void trap_handler(struct trap_frame *f) {
         if (cause == SCAUSE_SUPERVISOR_EXTERNAL) {
             unsigned int irq = plic_claim();
 
-            if (irq == VIRT_UART0_IRQ) {
+            if (irq == uart_irq()) {
                 uart_interrupt();
             }
 

@@ -7,11 +7,11 @@
 
 #include "vm.h"
 #include "error.h"
+#include "fdt.h"
 #include "page.h"
 #include "panic.h"
 #include "riscv.h"
 #include "thread.h"
-#include "virt.h"
 
 // A PTE holds the physical page number in bits 53:10.
 #define PTE_FROM_PA(pa) (((unsigned long)(pa) >> 12) << 10)
@@ -106,7 +106,20 @@ static void vm_map_identity(unsigned long start, unsigned long end,
     }
 }
 
-void vm_init(unsigned long ram_end) {
+// Identity-map an MMIO region, rounding outward to 4 KiB page boundaries
+// (for example, the UART DTB reg size is 0x100 bytes).
+static void vm_map_mmio(unsigned long base, unsigned long size) {
+    if (size == 0) {
+        return;
+    }
+
+    unsigned long start = base & ~(PAGE_SIZE - 1UL);
+    unsigned long end = (base + size + PAGE_SIZE - 1UL) & ~(PAGE_SIZE - 1UL);
+
+    vm_map_identity(start, end, PTE_R | PTE_W);
+}
+
+void vm_init(const struct fdt_info *info) {
     vm_kernel_root = page_alloc();
 
     if (vm_kernel_root == 0) {
@@ -115,8 +128,16 @@ void vm_init(unsigned long ram_end) {
 
     // No PTE_U anywhere, so U-mode cannot touch any of this. Code is not
     // writable and data is not executable (W^X).
-    vm_map_identity(VIRT_PLIC, VIRT_PLIC + VIRT_PLIC_SIZE, PTE_R | PTE_W);
-    vm_map_identity(VIRT_UART0, VIRT_UART0 + VIRT_UART0_SIZE, PTE_R | PTE_W);
+    vm_map_mmio(info->plic.base, info->plic.size);
+    vm_map_mmio(info->uart.base, info->uart.size);
+
+    for (int i = 0; i < info->virtio_count; i++) {
+        vm_map_mmio(info->virtio[i].base, info->virtio[i].size);
+    }
+
+    unsigned long ram_end =
+        (info->ram_base + info->ram_size) & ~(PAGE_SIZE - 1UL);
+
     vm_map_identity((unsigned long)__kernel_start, (unsigned long)__text_end,
                     PTE_R | PTE_X);
     vm_map_identity((unsigned long)__text_end, (unsigned long)__rodata_end,

@@ -2,9 +2,11 @@
 
 // Sv39 page tables and access to user memory. See docs/memory.md.
 
-// Build the kernel page table, identity-mapping the devices and RAM up to
-// ram_end, and turn on paging.
-void vm_init(unsigned long ram_end);
+struct fdt_info;
+
+// Build the kernel page table, identity-mapping the devices and RAM described
+// in info, and turn on paging.
+void vm_init(const struct fdt_info *info);
 
 // Create a page table for a user program. It shares the kernel mappings.
 // Returns 0 when out of memory.

@@ -3,20 +3,20 @@
 
 #include "timer.h"
 #include "riscv.h"
-#include "virt.h"
 
 // Ticks of the time CSR between interrupts: 100 interrupts per second.
-#define TIMER_INTERVAL (VIRT_TIMEBASE_FREQ / 100)
+static unsigned long timer_interval;
 
 static unsigned long timer_tick_count;
 
 // A timer interrupt is pending while time >= stimecmp, so moving stimecmp
 // into the future also clears the current one.
 static void timer_set_next(void) {
-    csr_write(stimecmp, csr_read(time) + TIMER_INTERVAL);
+    csr_write(stimecmp, csr_read(time) + timer_interval);
 }
 
-void timer_init(void) {
+void timer_init(unsigned long timebase_freq) {
+    timer_interval = timebase_freq / 100;
     timer_set_next();
     csr_set(sie, SIE_STIE);
 }
