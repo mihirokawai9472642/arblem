@@ -1,6 +1,7 @@
 // kernel_main: bring up each subsystem in order and start the shell.
 // See docs/boot.md.
 
+#include "bcache.h"
 #include "console.h"
 #include "fd.h"
 #include "fdt.h"
@@ -81,6 +82,7 @@ void kernel_main(unsigned long hartid, unsigned long dtb) {
         kprintf("Disk: none\n");
     }
 
+    bcache_init();
     timer_init(info.timebase_freq);
 
     int shell = proc_spawn("shell", 0, 0);
