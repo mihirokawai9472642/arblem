@@ -7,11 +7,19 @@ This page follows the machine from reset to the shell's first prompt.
 `make run` starts QEMU with:
 
 ```
-qemu-system-riscv64 -machine virt -nographic -bios default -kernel build/kernel.elf
+qemu-system-riscv64 -machine virt -nographic -bios default \
+    -global virtio-mmio.force-legacy=false \
+    -drive file=build/disk.img,if=none,format=raw,id=hd0 \
+    -device virtio-blk-device,drive=hd0,bus=virtio-mmio-bus.0 \
+    -kernel build/kernel.elf
 ```
 
 - `-bios default` loads QEMU's bundled OpenSBI at `0x80000000` and runs it in
   M-mode.
+- `-global virtio-mmio.force-legacy=false` configures QEMU's VirtIO MMIO slots
+  for Modern VirtIO 1.0+ (MMIO v2).
+- `-drive ... -device virtio-blk-device,...` attaches the 1 MiB raw disk image
+  `build/disk.img` (created automatically if missing) as a VirtIO block device.
 - `-kernel` loads `build/kernel.elf` at its link address, `0x80200000`.
 
 OpenSBI sets up M-mode, delegates the S-mode interrupts and exceptions to
@@ -38,25 +46,27 @@ The linker script puts `.text.boot` first, so `_start` is at `0x80200000`.
 
 ## 3. `kernel_main` (`kernel/kernel.c`)
 
-| Step                              | What it does                                                         |
-|-----------------------------------|----------------------------------------------------------------------|
-| `kprintf(...)`                    | Print the banner, hart ID, DTB address and SBI version through SBI   |
-| `page_init(__kernel_end, dtb)`    | Put every page from the end of the kernel up to the DTB on the free list |
-| `vm_init(dtb)`                    | Build the kernel page table and turn on Sv39 paging                  |
-| `uart_init()`                     | Enable the UART's receive interrupt                                  |
-| `plic_init()`, `plic_enable(10)`  | Route UART interrupts to this hart's S-mode and enable `sie.SEIE`    |
-| `timer_init()`                    | Arm the first timer interrupt and enable `sie.STIE`                  |
-| `proc_spawn("shell")`             | Load the shell's ELF into a new address space, in a new thread       |
-| `thread_set_file(...)` x3         | Give the shell the console as stdin, stdout and stderr               |
-| `thread_start()`                  | Create the idle thread and switch to thread 0                        |
+| Step                                   | What it does                                                         |
+|----------------------------------------|----------------------------------------------------------------------|
+| `kprintf(...)`                         | Print the banner, hart ID, DTB address and SBI version through SBI   |
+| `fdt_parse(dtb, &info)`                | Parse the DTB for RAM, timer frequency, PLIC, UART, and VirtIO MMIO slots; print detected hardware and validate required fields |
+| `page_init(...)` (below and above DTB) | Reserve the DTB pages `[dtb_start, dtb_end)` and add usable RAM below (`[__kernel_end, dtb_start)`) and above (`[dtb_end, ram_end)`) to the free list |
+| `vm_init(&info)`                       | Build the kernel page table (MMIO devices, kernel, and RAM up to `ram_end`) and turn on Sv39 paging |
+| `uart_init(base, irq)`                 | Record the UART MMIO base and IRQ and enable its receive interrupt   |
+| `plic_init(base)`, `plic_enable(uart.irq)` | Record the PLIC base, route UART interrupts to this hart's S-mode, and enable `sie.SEIE` |
+| `virtio_blk_init(&info)`, `plic_enable(irq)` | Probe VirtIO MMIO slots for a Modern v2 block device, initialize queue 0, and enable its PLIC IRQ if found |
+| `timer_init(timebase_freq)`            | Compute the 100 Hz interval from the DTB's `timebase-frequency`, arm the first timer interrupt, and enable `sie.STIE` |
+| `proc_spawn("shell", 0, 0)`            | Load the shell's ELF into a new address space, in a new thread       |
+| `thread_set_file(...)` x3              | Give the shell the console as stdin, stdout and stderr               |
+| `thread_start()`                       | Create the idle thread and switch to thread 0                        |
 
 `sie` bits only enable interrupt *sources*. The global switch `sstatus.SIE`
 stays off during `kernel_main`, so no interrupt arrives until the first thread
 runs.
 
-The kernel does not parse the device tree. It assumes that OpenSBI put the DTB
-near the top of RAM, and treats the DTB's address as the end of usable memory.
-See [Known issues](known-issues.md).
+`fdt_parse` runs before paging is turned on, while the DTB can be read directly
+at its physical address. `kernel_main` keeps the DTB's own pages reserved (out
+of the free list) and reclaims any usable RAM above them up to `ram_end`.
 
 ## 4. The first thread
 
@@ -79,6 +89,7 @@ QEMU's `virt` machine has 128 MiB of RAM by default.
 ```
 0x0c000000  PLIC (6 MiB)
 0x10000000  UART0 (16550)
+0x10001000  VirtIO MMIO (8 slots, 4 KiB each)
 ...
 0x80000000  OpenSBI
 0x80200000  kernel .text        (__kernel_start)
@@ -86,6 +97,7 @@ QEMU's `virt` machine has 128 MiB of RAM by default.
             kernel .data, .bss  (__rodata_end), boot stack in .bss
             free pages          (__kernel_end, page aligned)
             ...
-dtb         device tree, placed by OpenSBI near the top of RAM
+dtb         device tree (reserved pages, placed near top of RAM)
+            free pages          (above DTB, up to ram_end)
 0x88000000  end of RAM
 ```

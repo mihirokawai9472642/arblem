@@ -34,6 +34,7 @@ File descriptors 0, 1 and 2 are the console, inherited from the shell.
 | `upper` | Copies stdin to stdout, converting ASCII lowercase letters to uppercase |
 | `echo` | Prints its command-line arguments (`argv[1..]`) separated by spaces |
 | `memcheck` | Checks `sbrk`, lazy heap allocation, syscall demand paging, stack growth, and the stack guard page, printing `mem: ok`; used by the smoke test |
+| `blkcheck` | Checks VirtIO-blk sector read/write round-trip, sector isolation, out-of-bounds `-ERR_IO`, bad-pointer `-ERR_FAULT`, leaves a persistence signature in sector 0, and prints `blk: ok`; used by the smoke test |
 
 ## The shell
 

@@ -50,13 +50,18 @@ or spawn the matching Zed task (`build` for the default target):
 | Target   | Does                                                                                |
 |----------|-------------------------------------------------------------------------------------|
 | (none)   | Build `build/kernel.elf`, the user programs, and `build/compile_commands.json`      |
-| `run`    | Build, then boot in QEMU                                                            |
-| `test`   | Build, then run the smoke test                                                      |
-| `debug`  | Build, then boot halted at the first instruction waiting for LLDB on port 1234      |
+| `run`    | Build, ensure a 1 MiB raw disk `build/disk.img`, and boot in QEMU with Modern VirtIO-blk |
+| `test`   | Build, create a fresh 1 MiB `build/test.img`, and run the smoke test                |
+| `debug`  | Build, ensure `build/disk.img`, then boot halted at the first instruction waiting for LLDB on port 1234 |
 | `lldb`   | Attach LLDB to the waiting QEMU instance (from a second terminal)                   |
 | `format` | Format C sources and headers (`kernel/`, `lib/`, `inc/`, `user/`) with `clang-format` |
 | `tidy`   | Run `clang-tidy` on all C sources using `build/compile_commands.json`               |
 | `clean`  | Delete `build/`                                                                     |
+
+`make run` and `make debug` attach `build/disk.img` (auto-created if missing)
+using `-global virtio-mmio.force-legacy=false` for Modern VirtIO MMIO v2. `make
+test` recreates a separate `build/test.img` on every run so automated tests do
+not dirty `build/disk.img`.
 
 ## Formatting and static analysis
 
@@ -74,34 +79,37 @@ C formatting and static checks are configured in `.clang-format` and
 
 The smoke test boots the real kernel in QEMU and types into the shell:
 
-1. Creates a named pipe, `build/test.in`, for QEMU's standard input, and
-   logs all output to `build/test.log`.
+1. Uses the fresh 1 MiB disk image `build/test.img` created by `make test`,
+   creates a named pipe `build/test.in` for QEMU's standard input, and logs
+   all output to `build/test.log`.
 2. Waits for the `> ` prompt.
 3. Types `pages`, `hello`, `pages`, `orphan` seven times, `regcheck`,
    `pipecheck`, `pages`, `hello | upper`, `pages`, `echo arg1 arg2 | upper`,
-   `pages`, `memcheck`, `pages`, `count`, `pages`, `fault`, `pages`, `foo`,
-   `pages`, `poweroff`, each ending in `\r` as a terminal would send it. `count`
-   takes about a second, which gives the orphans' children time to finish and be
-   freed before the next `pages`.
+   `pages`, `memcheck`, `pages`, `blkcheck`, `pages`, `count`, `pages`,
+   `fault`, `pages`, `foo`, `pages`, `poweroff`, each ending in `\r` as a
+   terminal would send it. `count` takes about a second, which gives the
+   orphans' children time to finish and be freed before the next `pages`.
 4. Waits for QEMU to exit.
 
-It then checks the log:
+It then checks the log and disk image:
 
-| Check      | Passes when                                              |
-|------------|----------------------------------------------------------|
-| `boot`     | The kernel banner appears                                |
-| `hello`    | `hello` printed its message                              |
-| `count`    | `count` reached `count: 4`                               |
-| `fault`    | The shell printed `exit: -1` for `fault`                 |
-| `unknown`  | `foo` was reported as `Unknown command`                  |
-| `regs`     | `regcheck` printed `regs: ok`: `gp` and `tp` are saved per program, and a new program starts with them cleared |
-| `pipe`     | `pipecheck` printed `pipe: ok`: `close`, `dup`, and `pipe` pass all checks |
-| `pipeline` | `hello \| upper` printed `HELLO WORLD FROM U-MODE!`      |
-| `args`     | `echo arg1 arg2 \| upper` printed `ARG1 ARG2`            |
-| `mem`      | `memcheck` printed `mem: ok`: `sbrk`, demand paging, stack growth, and the guard page pass |
-| `orphan`   | `hello` ran 8 times: once alone, and once from each `orphan`, so orphans are freed and the thread table never fills up |
-| `pages`    | All nine `pages` outputs are identical, so nothing leaked |
-| `poweroff` | QEMU exited with status 0                                |
+| Check         | Passes when                                              |
+|---------------|----------------------------------------------------------|
+| `boot`        | The kernel banner appears                                |
+| `hello`       | `hello` printed its message                              |
+| `count`       | `count` reached `count: 4`                               |
+| `fault`       | The shell printed `exit: -1` for `fault`                 |
+| `unknown`     | `foo` was reported as `Unknown command`                  |
+| `regs`        | `regcheck` printed `regs: ok`: `gp` and `tp` are saved per program, and a new program starts with them cleared |
+| `pipe`        | `pipecheck` printed `pipe: ok`: `close`, `dup`, and `pipe` pass all checks |
+| `pipeline`    | `hello \| upper` printed `HELLO WORLD FROM U-MODE!`      |
+| `args`        | `echo arg1 arg2 \| upper` printed `ARG1 ARG2`            |
+| `mem`         | `memcheck` printed `mem: ok`: `sbrk`, demand paging, stack growth, and the guard page pass |
+| `blk`         | `blkcheck` printed `blk: ok`: VirtIO-blk sector read/write round-trip and error checks pass |
+| `blk_persist` | `ARBLEM-BLK-OK` persisted in `build/test.img` after QEMU exited |
+| `orphan`      | `hello` ran 8 times: once alone, and once from each `orphan`, so orphans are freed and the thread table never fills up |
+| `pages`       | All ten `pages` outputs are identical, so nothing leaked |
+| `poweroff`    | QEMU exited with status 0                                |
 
 The test fails at once if the log contains `panic: `, or if an expected line
 does not appear within 20 seconds.

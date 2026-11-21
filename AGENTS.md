@@ -79,7 +79,8 @@ available there.
   suppresses in system headers, or explicitly justified `NOLINT` annotations
   such as the intentional page fault in `user/fault.c`, do not count).
 - `make test` passes every check (`boot`, `hello`, `count`, `fault`, `unknown`,
-  `regs`, `pipe`, `pipeline`, `args`, `mem`, `orphan`, `pages`, `poweroff`).
+  `regs`, `pipe`, `pipeline`, `args`, `mem`, `blk`, `blk_persist`, `orphan`,
+  `pages`, `poweroff`).
 
 ## Git workflow
 

@@ -5,14 +5,7 @@ Remove an entry when it is fixed.
 
 ## Bugs
 
-### The end of RAM is guessed from the DTB address
-
-`kernel_main` passes the device tree address to `page_init` and `vm_init` as the
-end of usable memory. This works because OpenSBI happens to place the DTB near
-the top of RAM, but nothing guarantees it. The memory above the DTB is wasted,
-and the DTB itself is not mapped once paging is on, so it cannot be read later.
-
-Code: `kernel_main` in `kernel/kernel.c`.
+No known bugs at the moment.
 
 ## Limits
 
@@ -27,7 +20,6 @@ Code: `kernel_main` in `kernel/kernel.c`.
 - **Nothing restarts the shell.** If the shell faults or exits, it is freed
   like any other orphan, only the idle thread is left, and the machine hangs
   silently.
-- **Device addresses are hard-coded** for QEMU `virt` in `kernel/virt.h`.
 
 ### Processes
 
@@ -43,3 +35,5 @@ Code: `kernel_main` in `kernel/kernel.c`.
 
 - **`poweroff` reports a failed shutdown as `-ERR_NOSYS`**, because
   `syscall_handle` falls through to the "unknown call" return.
+- **One in-flight block request at a time.** `virtio_blk_rw` serializes requests
+  with `blk_busy` and reuses descriptors 0-2.

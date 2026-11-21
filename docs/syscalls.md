@@ -25,6 +25,7 @@ numbers match Linux, which makes them easy to look up.
 | Name         | Value | Meaning                                         |
 |--------------|-------|-------------------------------------------------|
 | `ERR_NOENT`  | 2     | No program with that name                       |
+| `ERR_IO`     | 5     | Block I/O error (no disk, out-of-range sector, or device error) |
 | `ERR_2BIG`   | 7     | Argument list too long                          |
 | `ERR_NOEXEC` | 8     | The program is not a valid executable           |
 | `ERR_BADF`   | 9     | Bad file descriptor                             |
@@ -168,6 +169,29 @@ break (a user address).
   below `heap_base`.
 
 Wrapper: `sys_sbrk`.
+
+### 13 `blk_read(sector, buf)`
+
+Reads one 512-byte sector at index `sector` from the VirtIO block device into a
+kernel bounce buffer and copies it to `buf`. Returns 0.
+
+- `-ERR_IO` if no block device is present, `sector` is out of range, or the
+  device reports an error.
+- `-ERR_FAULT` if the 512-byte range at `buf` is not writable user memory.
+
+Wrapper: `sys_blk_read`.
+
+### 14 `blk_write(sector, buf)`
+
+Copies 512 bytes from `buf` into a kernel bounce buffer and writes them to sector
+index `sector` on the VirtIO block device. Returns 0.
+
+- `-ERR_FAULT` if the 512-byte range at `buf` is not readable user memory (checked
+  before touching the device).
+- `-ERR_IO` if no block device is present, `sector` is out of range, or the
+  device reports an error.
+
+Wrapper: `sys_blk_write`.
 
 ## Adding a system call
 
