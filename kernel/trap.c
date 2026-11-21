@@ -9,6 +9,7 @@
 #include "thread.h"
 #include "timer.h"
 #include "uart.h"
+#include "virtio_blk.h"
 
 // Registers saved by trap_entry, at the offsets trap.S uses. sp is the stack
 // pointer of the interrupted code. gp and tp belong to the user program: the
@@ -38,11 +39,15 @@ void trap_handler(struct trap_frame *f) {
         if (cause == SCAUSE_SUPERVISOR_EXTERNAL) {
             unsigned int irq = plic_claim();
 
-            if (irq == uart_irq()) {
-                uart_interrupt();
-            }
+            if (irq != 0) {
+                if (irq == uart_irq()) {
+                    uart_interrupt();
+                } else if (irq == virtio_blk_irq()) {
+                    virtio_blk_interrupt();
+                }
 
-            plic_complete(irq);
+                plic_complete(irq);
+            }
         }
 
         // Preemption: every interrupt gives the next thread a turn.

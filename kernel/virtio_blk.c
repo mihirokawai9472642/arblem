@@ -2,7 +2,9 @@
 // virtqueue (queue 0).
 
 #include "virtio_blk.h"
+#include "error.h"
 #include "fdt.h"
+#include "thread.h"
 
 // VirtIO MMIO v2 register offsets (all 32-bit little-endian).
 #define VIRTIO_MMIO_MAGIC               0x000
@@ -16,6 +18,9 @@
 #define VIRTIO_MMIO_QUEUE_NUM_MAX       0x034
 #define VIRTIO_MMIO_QUEUE_NUM           0x038
 #define VIRTIO_MMIO_QUEUE_READY         0x044
+#define VIRTIO_MMIO_QUEUE_NOTIFY        0x050
+#define VIRTIO_MMIO_INTERRUPT_STATUS    0x060
+#define VIRTIO_MMIO_INTERRUPT_ACK       0x064
 #define VIRTIO_MMIO_STATUS              0x070
 #define VIRTIO_MMIO_QUEUE_DESC_LOW      0x080
 #define VIRTIO_MMIO_QUEUE_DESC_HIGH     0x084
@@ -42,6 +47,15 @@
 // Number of descriptors in requestq (power of two; one block request uses 3).
 #define VIRTIO_QUEUE_SIZE 8
 
+// Descriptor flags (VirtIO spec 2.7.5).
+#define VIRTQ_DESC_F_NEXT  1U // Buffer continues via the next field
+#define VIRTQ_DESC_F_WRITE 2U // Buffer is device-writable (driver reads)
+
+// Block request types and status codes (VirtIO spec 5.2.6).
+#define VIRTIO_BLK_T_IN  0U // Read from disk
+#define VIRTIO_BLK_T_OUT 1U // Write to disk
+#define VIRTIO_BLK_S_OK  0U
+
 // Split virtqueue layouts (VirtIO spec 2.7).
 struct virtq_desc {
     unsigned long addr;
@@ -67,9 +81,18 @@ struct virtq_used {
     struct virtq_used_elem ring[VIRTIO_QUEUE_SIZE];
 };
 
+// Block request header (VirtIO spec 5.2.6).
+struct virtio_blk_req {
+    unsigned int type;
+    unsigned int reserved;
+    unsigned long sector;
+};
+
 _Static_assert(sizeof(struct virtq_desc) == 16, "virtq_desc must be 16 bytes");
 _Static_assert(sizeof(struct virtq_used_elem) == 8,
                "virtq_used_elem must be 8 bytes");
+_Static_assert(sizeof(struct virtio_blk_req) == 16,
+               "virtio_blk_req must be 16 bytes");
 
 // Alignment requirements from VirtIO spec 2.7: desc 16, avail 2, used 4.
 // Placed in .bss (zeroed at boot and identity-mapped, so virtual == physical).
@@ -77,9 +100,17 @@ static _Alignas(16) struct virtq_desc blk_desc[VIRTIO_QUEUE_SIZE];
 static _Alignas(2) struct virtq_avail blk_avail;
 static _Alignas(4) struct virtq_used blk_used;
 
+// Single in-flight request header and completion status byte.
+static struct virtio_blk_req blk_req;
+static unsigned char blk_status;
+
 static unsigned long blk_base;
 static unsigned int blk_irq_num;
 static unsigned long blk_sectors;
+static unsigned short blk_used_idx;
+static int blk_busy;
+static char blk_busy_wait;
+static char blk_done_wait;
 
 static unsigned int mmio_read(unsigned long base, unsigned long off) {
     return *(volatile unsigned int *)(base + off);
@@ -88,6 +119,11 @@ static unsigned int mmio_read(unsigned long base, unsigned long off) {
 static void mmio_write(unsigned long base, unsigned long off,
                        unsigned int val) {
     *(volatile unsigned int *)(base + off) = val;
+}
+
+// Order CPU memory accesses against device DMA and MMIO writes.
+static void dma_barrier(void) {
+    __asm__ volatile("fence iorw, iorw" : : : "memory");
 }
 
 static int virtio_blk_setup(unsigned long base, unsigned int irq) {
@@ -197,4 +233,88 @@ unsigned int virtio_blk_irq(void) {
 
 unsigned long virtio_blk_sectors(void) {
     return blk_sectors;
+}
+
+static int virtio_blk_rw(unsigned long sector, unsigned long buf_pa,
+                         int write) {
+    if (blk_base == 0 || sector >= blk_sectors) {
+        return -ERR_IO;
+    }
+
+    // Serialize requests so descriptors 0..2 and blk_req stay exclusive
+    // while a thread sleeps waiting for DMA completion.
+    while (blk_busy) {
+        thread_sleep(&blk_busy_wait);
+    }
+
+    blk_busy = 1;
+
+    blk_req.type = write ? VIRTIO_BLK_T_OUT : VIRTIO_BLK_T_IN;
+    blk_req.reserved = 0;
+    blk_req.sector = sector;
+    blk_status = 0xff;
+
+    // Descriptor 0: 16-byte request header (device reads).
+    blk_desc[0].addr = (unsigned long)&blk_req;
+    blk_desc[0].len = sizeof(blk_req);
+    blk_desc[0].flags = VIRTQ_DESC_F_NEXT;
+    blk_desc[0].next = 1;
+
+    // Descriptor 1: 512-byte sector data. VIRTQ_DESC_F_WRITE means
+    // device-writable, so it is set for reads and clear for writes.
+    blk_desc[1].addr = buf_pa;
+    blk_desc[1].len = VIRTIO_BLK_SECTOR_SIZE;
+    blk_desc[1].flags = VIRTQ_DESC_F_NEXT | (write ? 0U : VIRTQ_DESC_F_WRITE);
+    blk_desc[1].next = 2;
+
+    // Descriptor 2: 1-byte completion status (device writes).
+    blk_desc[2].addr = (unsigned long)&blk_status;
+    blk_desc[2].len = 1;
+    blk_desc[2].flags = VIRTQ_DESC_F_WRITE;
+    blk_desc[2].next = 0;
+
+    // Publish descriptor chain head (0) into the available ring.
+    blk_avail.ring[blk_avail.idx % VIRTIO_QUEUE_SIZE] = 0;
+    dma_barrier();
+    blk_avail.idx++;
+    dma_barrier();
+
+    // Notify queue 0 (doorbell).
+    mmio_write(blk_base, VIRTIO_MMIO_QUEUE_NOTIFY, 0);
+
+    // Sleep until the device advances the used ring.
+    while (blk_used_idx == ((volatile struct virtq_used *)&blk_used)->idx) {
+        thread_sleep(&blk_done_wait);
+    }
+
+    // Ensure DMA writes to buf and blk_status are visible after used.idx.
+    dma_barrier();
+    blk_used_idx++;
+
+    unsigned char status = *(volatile unsigned char *)&blk_status;
+
+    blk_busy = 0;
+    thread_wakeup(&blk_busy_wait);
+
+    return status == VIRTIO_BLK_S_OK ? 0 : -ERR_IO;
+}
+
+int virtio_blk_read(unsigned long sector, void *buf) {
+    return virtio_blk_rw(sector, (unsigned long)buf, 0);
+}
+
+int virtio_blk_write(unsigned long sector, const void *buf) {
+    return virtio_blk_rw(sector, (unsigned long)buf, 1);
+}
+
+void virtio_blk_interrupt(void) {
+    if (blk_base == 0) {
+        return;
+    }
+
+    // Acknowledge the level-triggered VirtIO interrupt before plic_complete.
+    unsigned int isr = mmio_read(blk_base, VIRTIO_MMIO_INTERRUPT_STATUS);
+
+    mmio_write(blk_base, VIRTIO_MMIO_INTERRUPT_ACK, isr);
+    thread_wakeup(&blk_done_wait);
 }

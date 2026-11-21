@@ -5,6 +5,7 @@
 // See docs/syscalls.md.
 
 #define ERR_NOENT  2  // No such program
+#define ERR_IO     5  // I/O error
 #define ERR_2BIG   7  // Argument list too long
 #define ERR_NOEXEC 8  // Not a valid executable
 #define ERR_BADF   9  // Bad file descriptor
