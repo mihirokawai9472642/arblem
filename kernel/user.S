@@ -25,6 +25,8 @@
 .global user_echo_end
 .global user_memcheck
 .global user_memcheck_end
+.global user_blkcheck
+.global user_blkcheck_end
 .global user_shell
 .global user_shell_end
 
@@ -79,6 +81,11 @@ user_echo_end:
 user_memcheck:
     .incbin "build/user/memcheck.elf"
 user_memcheck_end:
+
+.balign 8
+user_blkcheck:
+    .incbin "build/user/blkcheck.elf"
+user_blkcheck_end:
 
 .balign 8
 user_shell:

@@ -291,7 +291,7 @@ static void shell_exec(char *line) {
         sys_puts("ticks: Show timer ticks.\n");
         sys_puts("poweroff: Power off the machine.\n");
         sys_puts("hello, count, fault, orphan, regcheck, pipecheck, upper, "
-                 "echo, memcheck: Run the program.\n");
+                 "echo, memcheck, blkcheck: Run the program.\n");
         sys_puts("cmd1 | cmd2: Connect cmd1's stdout to cmd2's stdin.\n");
 
         return;

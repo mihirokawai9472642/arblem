@@ -8,6 +8,7 @@ TARGET  := --target=riscv64-unknown-elf -march=rv64gc -mabi=lp64d -mcmodel=medan
 BUILD   := build
 KERNEL  := $(BUILD)/kernel.elf
 DISK    := $(BUILD)/disk.img
+TEST_DISK := $(BUILD)/test.img
 
 CC      := clang
 LD      := ld.lld
@@ -27,7 +28,7 @@ BLKFLAGS  := -drive file=$(DISK),if=none,format=raw,id=hd0 \
 
 # Programs embedded in the kernel. Each also needs an entry in kernel/user.S
 # and kernel/proc.c; see docs/user.md.
-USER_PROGS := hello count fault orphan regcheck regclobber pipecheck upper echo memcheck shell
+USER_PROGS := hello count fault orphan regcheck regclobber pipecheck upper echo memcheck blkcheck shell
 
 KERNEL_OBJS := $(patsubst %,$(BUILD)/%.o,$(wildcard kernel/*.S kernel/*.c))
 LIB_OBJS    := $(patsubst %,$(BUILD)/%.o,$(wildcard lib/*.c))
@@ -48,8 +49,12 @@ all: $(KERNEL) $(BUILD)/compile_commands.json
 run: $(KERNEL) $(DISK)
 	$(QEMU) $(QEMUFLAGS) $(BLKFLAGS) -kernel $(KERNEL)
 
-test: $(KERNEL) $(DISK)
-	sh test/smoke.sh $(QEMU) $(QEMUFLAGS) $(BLKFLAGS) -kernel $(KERNEL)
+test: $(KERNEL)
+	rm -f $(TEST_DISK)
+	truncate -s 1M $(TEST_DISK)
+	sh test/smoke.sh $(QEMU) $(QEMUFLAGS) \
+		-drive file=$(TEST_DISK),if=none,format=raw,id=hd0 \
+		-device virtio-blk-device,drive=hd0,bus=virtio-mmio-bus.0 -kernel $(KERNEL)
 
 # Boot halted at the first instruction, waiting for a debugger on port 1234.
 # Attach with "make lldb" from another terminal.

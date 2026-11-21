@@ -28,6 +28,7 @@ extern char user_pipecheck[], user_pipecheck_end[];
 extern char user_upper[], user_upper_end[];
 extern char user_echo[], user_echo_end[];
 extern char user_memcheck[], user_memcheck_end[];
+extern char user_blkcheck[], user_blkcheck_end[];
 extern char user_shell[], user_shell_end[];
 
 // The programs proc_spawn can start, by name.
@@ -42,6 +43,7 @@ static const struct proc_image proc_images[] = {
     {"upper", user_upper, user_upper_end},
     {"echo", user_echo, user_echo_end},
     {"memcheck", user_memcheck, user_memcheck_end},
+    {"blkcheck", user_blkcheck, user_blkcheck_end},
     {"shell", user_shell, user_shell_end},
 };
 
