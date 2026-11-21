@@ -3,6 +3,7 @@
 
 #include "console.h"
 #include "fd.h"
+#include "fdt.h"
 #include "kprintf.h"
 #include "page.h"
 #include "panic.h"
@@ -26,6 +27,18 @@ void kernel_main(unsigned long hartid, unsigned long dtb) {
     kprintf("HartID: %x\n", hartid);
     kprintf("DTB: %x\n", dtb);
     kprintf("SBI: %x\n", sbi_spec_version());
+
+    struct fdt_info info;
+
+    if (fdt_parse(dtb, &info) != 0) {
+        panic("invalid device tree");
+    }
+
+    kprintf("RAM: %x + %x\n", info.ram_base, info.ram_size);
+    kprintf("UART: %x (irq %x)\n", info.uart.base,
+            (unsigned long)info.uart.irq);
+    kprintf("PLIC: %x + %x\n", info.plic.base, info.plic.size);
+    kprintf("VirtIO: %x slots\n", (unsigned long)info.virtio_count);
 
     // The device tree is not parsed yet: OpenSBI places it near the top of
     // RAM, so its address stands in for the end of usable memory.
