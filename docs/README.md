@@ -17,9 +17,10 @@ the ones before it.
 | [Memory](memory.md)                     | Physical page allocator, Sv39 page tables, address spaces     |
 | [Traps](traps.md)                       | Trap entry and return, interrupts, exceptions                 |
 | [Threads](threads.md)                   | Thread table, context switch, scheduling, sleep and wakeup    |
-| [Processes](processes.md)               | Embedded ELF programs, loading, `spawn` and `wait`            |
+| [Processes](processes.md)               | ELF programs loaded from disk, `spawn` and `wait`             |
 | [System calls](syscalls.md)             | Calling convention, error codes, and every system call        |
 | [Devices](devices.md)                   | Device tree, UART, PLIC, timer, VirtIO-blk, and the SBI calls the kernel uses |
+| [Filesystem](filesystem.md)             | Block cache, on-disk layout, `mkfs`, files and directories    |
 | [User programs](user.md)                | The user runtime, the shell, and adding a new program         |
 | [Build and test](build-and-test.md)     | Makefile, smoke test, and debugging with QEMU and LLDB        |
 | [Known issues](known-issues.md)         | Bugs and limits of the current design                         |
@@ -32,9 +33,10 @@ the ones before it.
 | Memory          | `kernel/page.c`, `kernel/vm.c`, `kernel/riscv.h`                          |
 | Traps           | `kernel/trap.S`, `kernel/trap.c`                                          |
 | Threads         | `kernel/thread.S`, `kernel/thread.c`                                      |
-| Processes       | `kernel/proc.c`, `kernel/elf.c`, `kernel/user.S`                          |
+| Processes       | `kernel/proc.c`, `kernel/elf.c`                                           |
 | System calls    | `kernel/syscall.c`, `inc/sysnum.h`, `inc/error.h`, `user/sys.h`           |
 | Files           | `kernel/file.h`, `kernel/file.c`, `kernel/console.c`, `kernel/pipe.c`, `inc/fd.h` |
+| Filesystem      | `kernel/bcache.c`, `kernel/kfs.c`, `inc/fs.h`, `tools/mkfs.c`             |
 | Devices         | `kernel/fdt.c`, `kernel/uart.c`, `kernel/plic.c`, `kernel/timer.c`, `kernel/virtio_blk.c` |
 | Firmware calls  | `kernel/sbi.c`, `kernel/kprintf.c`, `kernel/panic.c`                      |
 | User programs   | `user/*.c`, `user/linker.ld`                                              |

@@ -25,17 +25,20 @@ All output goes to `build/`, mirroring the source tree: `kernel/trap.S`
 becomes `build/kernel/trap.S.o`.
 
 ```
-lib/*.c ──────────────┬──────────────────────────────┐
-                      v                              v
-user/start.c + user/<name>.c ──> build/user/<name>.elf
-                                       │ .incbin
-                                       v
-kernel/*.c, kernel/*.S ──────────> build/kernel.elf
+lib/*.c ──────────────┬───────────────────────────────────────┐
+                      v                                       v
+user/start.c + user/<name>.c ──> build/user/<name>.elf        │
+                                        │                     │
+tools/mkfs.c ──> build/mkfs ────────────┴──> build/disk.img   v
+                                                        build/kernel.elf
+kernel/*.c, kernel/*.S ───────────────────────────────────────┘
 ```
 
-- `build/kernel/user.S.o` depends on every user ELF file, because
-  `kernel/user.S` includes them with `.incbin`. Changing a user program
-  rebuilds the kernel image.
+- `build/mkfs` is built natively with `HOSTFLAGS` (using the host C library)
+  and packs every `build/user/<name>.elf` into the 2 MiB filesystem image
+  `build/disk.img` (or `build/test.img` for `make test`).
+- `build/kernel.elf` contains no user ELFs; changing a user program only
+  rebuilds that ELF and the disk image.
 - Each user ELF file is `start.c.o`, the program's own object, and the `lib/`
   objects, linked with `user/linker.ld`.
 - `build/compile_commands.json` joins the `.o.json` fragments emitted for
@@ -49,19 +52,19 @@ or spawn the matching Zed task (`build` for the default target):
 
 | Target   | Does                                                                                |
 |----------|-------------------------------------------------------------------------------------|
-| (none)   | Build `build/kernel.elf`, the user programs, and `build/compile_commands.json`      |
-| `run`    | Build, ensure a 1 MiB raw disk `build/disk.img`, and boot in QEMU with Modern VirtIO-blk |
-| `test`   | Build, create a fresh 1 MiB `build/test.img`, and run the smoke test                |
-| `debug`  | Build, ensure `build/disk.img`, then boot halted at the first instruction waiting for LLDB on port 1234 |
+| (none)   | Build `build/kernel.elf`, the user programs, `build/mkfs`, `build/disk.img`, and `build/compile_commands.json` |
+| `run`    | Build, then boot `build/kernel.elf` and `build/disk.img` in QEMU with Modern VirtIO-blk |
+| `test`   | Build, create a fresh 2 MiB `build/test.img` with `build/mkfs`, and run the smoke test |
+| `debug`  | Build, then boot halted at the first instruction waiting for LLDB on port 1234      |
 | `lldb`   | Attach LLDB to the waiting QEMU instance (from a second terminal)                   |
-| `format` | Format C sources and headers (`kernel/`, `lib/`, `inc/`, `user/`) with `clang-format` |
+| `format` | Format C sources and headers (`kernel/`, `lib/`, `inc/`, `user/`, `tools/`) with `clang-format` |
 | `tidy`   | Run `clang-tidy` on all C sources using `build/compile_commands.json`               |
 | `clean`  | Delete `build/`                                                                     |
 
-`make run` and `make debug` attach `build/disk.img` (auto-created if missing)
-using `-global virtio-mmio.force-legacy=false` for Modern VirtIO MMIO v2. `make
-test` recreates a separate `build/test.img` on every run so automated tests do
-not dirty `build/disk.img`.
+`make run` and `make debug` attach `build/disk.img` using `-global
+virtio-mmio.force-legacy=false` for Modern VirtIO MMIO v2. `make test`
+recreates a separate `build/test.img` on every run so automated tests do not
+dirty `build/disk.img`.
 
 ## Formatting and static analysis
 
@@ -79,16 +82,17 @@ C formatting and static checks are configured in `.clang-format` and
 
 The smoke test boots the real kernel in QEMU and types into the shell:
 
-1. Uses the fresh 1 MiB disk image `build/test.img` created by `make test`,
+1. Uses the fresh 2 MiB filesystem image `build/test.img` created by `build/mkfs`,
    creates a named pipe `build/test.in` for QEMU's standard input, and logs
    all output to `build/test.log`.
 2. Waits for the `> ` prompt.
 3. Types `pages`, `hello`, `pages`, `orphan` seven times, `regcheck`,
    `pipecheck`, `pages`, `hello | upper`, `pages`, `echo arg1 arg2 | upper`,
-   `pages`, `memcheck`, `pages`, `blkcheck`, `pages`, `count`, `pages`,
-   `fault`, `pages`, `foo`, `pages`, `poweroff`, each ending in `\r` as a
-   terminal would send it. `count` takes about a second, which gives the
-   orphans' children time to finish and be freed before the next `pages`.
+   `pages`, `memcheck`, `pages`, `blkcheck`, `pages`, `fscheck`, `pages`,
+   `cat /persist`, `ls`, `pages`, `count`, `pages`, `fault`, `pages`, `foo`,
+   `pages`, `poweroff`, each ending in `\r` as a terminal would send it. `count`
+   takes about a second, which gives the orphans' children time to finish and be
+   freed before the next `pages`.
 4. Waits for QEMU to exit.
 
 It then checks the log and disk image:
@@ -106,9 +110,13 @@ It then checks the log and disk image:
 | `args`        | `echo arg1 arg2 \| upper` printed `ARG1 ARG2`            |
 | `mem`         | `memcheck` printed `mem: ok`: `sbrk`, demand paging, stack growth, and the guard page pass |
 | `blk`         | `blkcheck` printed `blk: ok`: VirtIO-blk sector read/write round-trip and error checks pass |
+| `fs`          | `fscheck` printed `fs: ok`: file R/W, `O_TRUNC`, multi-block I/O, directories, and `unlink` pass |
+| `cat`         | `cat /persist` printed `ARBLEM-FS-OK`                    |
+| `ls`          | `ls` listed `persist` in `/`                             |
 | `blk_persist` | `ARBLEM-BLK-OK` persisted in `build/test.img` after QEMU exited |
+| `fs_persist`  | `ARBLEM-FS-OK` persisted in `build/test.img` after QEMU exited |
 | `orphan`      | `hello` ran 8 times: once alone, and once from each `orphan`, so orphans are freed and the thread table never fills up |
-| `pages`       | All ten `pages` outputs are identical, so nothing leaked |
+| `pages`       | All twelve `pages` outputs are identical, so nothing leaked |
 | `poweroff`    | QEMU exited with status 0                                |
 
 The test fails at once if the log contains `panic: `, or if an expected line

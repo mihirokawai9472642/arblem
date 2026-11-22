@@ -35,6 +35,11 @@ File descriptors 0, 1 and 2 are the console, inherited from the shell.
 | `echo` | Prints its command-line arguments (`argv[1..]`) separated by spaces |
 | `memcheck` | Checks `sbrk`, lazy heap allocation, syscall demand paging, stack growth, and the stack guard page, printing `mem: ok`; used by the smoke test |
 | `blkcheck` | Checks VirtIO-blk sector read/write round-trip, sector isolation, out-of-bounds `-ERR_IO`, bad-pointer `-ERR_FAULT`, leaves a persistence signature in sector 0, and prints `blk: ok`; used by the smoke test |
+| `ls` | Lists directory entries (default `/`) by reading `struct fs_dirent` records |
+| `cat` | Copies each file argument (or stdin if none) to stdout |
+| `rm` | Removes one or more files or empty directories using `sys_unlink` |
+| `mkdir` | Creates one or more directories using `sys_mkdir` |
+| `fscheck` | Checks file R/W, `O_TRUNC`, 5000-byte multi-block I/O, directories, `unlink`, and error codes, leaving `/persist` on disk and printing `fs: ok`; used by the smoke test |
 
 ## The shell
 
@@ -61,12 +66,11 @@ If it cannot start the program, it prints the reason, such as
 
 1. Write `user/<name>.c` with `int main(void)` or `int main(int argc, char **argv)`.
    Include `sys.h` for system calls.
-2. Add `<name>` to `USER_PROGS` in the `Makefile`.
-3. In `kernel/user.S`, export `user_<name>` and `user_<name>_end`, and
-   `.incbin "build/user/<name>.elf"` between them (copy an existing block).
-4. In `kernel/proc.c`, declare the two symbols and add an entry to
-   `proc_images[]`.
-5. Optionally, mention it in the shell's `help` text and in the smoke test.
+2. Add `<name>` to `USER_PROGS` in the `Makefile`. `build/mkfs` packs
+   `build/user/<name>.elf` into `/` on the disk image automatically; no kernel
+   file needs editing.
+3. Optionally, mention it in `user/shell.c`'s `help` text and in
+   `test/smoke.sh`.
 
-The name must be shorter than 64 characters, the limit of the `spawn` system
-call (`SYSCALL_NAME_MAX`).
+The program name must fit inside a directory entry (`FS_NAME_MAX - 1` = 27
+characters) and be shorter than `SYSCALL_NAME_MAX` (64 characters).

@@ -42,32 +42,35 @@ RISC-V has three privilege levels, and Arblem uses all of them:
           |                |                   |
    syscall.c          timer.c / plic.c     user faults
    (read, write,      (interrupts)         -> thread_exit(-1)
-    blk_read/write,        |
-    spawn, wait...)        v
+    open, unlink,          |
+    mkdir, spawn...)       v
      |      |              v
      |   file.h/.c    thread.c / thread.S  scheduling, sleep/wakeup
      |   console.c         |
      |   pipe.c            |
      |   uart.c            |
+     |   kfs.c / bcache.c  |
      |   virtio_blk.c      v
      v                 vm.c  page.c        address spaces, pages
-   proc.c  elf.c  user.S                   (embedded user ELF files)
+   proc.c  elf.c  (ELF loaded from disk)
 ```
 
 | Component    | Role                                                                  |
 |--------------|-----------------------------------------------------------------------|
 | `boot.S`     | First instructions: set up a stack, clear `.bss`, install `stvec`     |
-| `kernel.c`   | Initialize subsystems in order and start the shell                    |
+| `kernel.c`   | Initialize subsystems and start `kernel_init` to mount the FS and spawn the shell |
 | `fdt.c`      | Parse the device tree for RAM, timer frequency, and MMIO devices      |
 | `page.c`     | Hand out and take back 4 KiB physical pages                           |
 | `vm.c`       | Build Sv39 page tables and copy data to and from user memory          |
 | `trap.S/.c`  | Save registers on a trap, dispatch it, and return with `sret`         |
 | `thread.S/.c`| Thread table, context switch, round-robin scheduler, sleep/wakeup     |
-| `proc.c`     | Load an ELF image into a new address space and start a thread in it  |
+| `proc.c`     | Load an ELF file from the filesystem into a new address space and start a thread in it |
 | `syscall.c`  | Decode system call numbers and arguments                              |
 | `file.c`     | Reference counting and closing for `struct file`                      |
 | `console.c`  | The console `struct file`, backed by the UART                         |
 | `pipe.c`     | One-page ring-buffer pipes (`struct file` read/write ends)            |
+| `bcache.c`   | Fixed-size 4 KiB LRU block cache over the VirtIO block device         |
+| `kfs.c`      | Simple block filesystem: inodes, directories, paths, `struct fs_file` |
 | `uart.c`     | 16550 UART driver with receive interrupts                             |
 | `virtio_blk.c` | Modern VirtIO MMIO v2 block device driver                           |
 | `plic.c`     | Platform-Level Interrupt Controller: enable, claim, complete          |

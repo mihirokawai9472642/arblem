@@ -30,9 +30,10 @@ exit: -1
 - Sv39 paging, with a separate address space per program, W^X mappings, and demand-paged heap and stack (up to 64 KiB with a guard page)
 - Preemptive round-robin threads, driven by a 100 Hz timer
 - Interrupt-driven UART input and Modern VirtIO-blk (MMIO v2) disk I/O with DMA through the PLIC
-- User programs loaded from ELF files embedded in the kernel image, with `argc`/`argv` argument passing
-- System calls: `read`, `write`, `close`, `dup`, `pipe`, `exit`, `spawn`, `wait`, `ticks`, `pages`, `sbrk`, `blk_read`, `blk_write`, `poweroff`
-- Per-process reference-counted file descriptors, with the console and pipes
+- 4 KiB LRU block cache (`kernel/bcache.c`) and simple block filesystem (`kernel/kfs.c`, `tools/mkfs.c`)
+- User programs loaded from ELF files on the VirtIO-blk filesystem, with `argc`/`argv` argument passing
+- System calls: `read`, `write`, `open`, `close`, `dup`, `pipe`, `unlink`, `mkdir`, `exit`, `spawn`, `wait`, `ticks`, `pages`, `sbrk`, `blk_read`, `blk_write`, `poweroff`
+- Per-process reference-counted file descriptors for the console, pipes, and filesystem files/directories
 - A smoke test that boots the system in QEMU and checks the shell's output and disk persistence
 
 ## Getting started
@@ -70,12 +71,12 @@ and the matching Zed task (`build` for the default target) does the same.
 
 | Target   | What it does                                                                         |
 | -------- | ------------------------------------------------------------------------------------ |
-| (none)   | Builds `build/kernel.elf`, the user programs, and `build/compile_commands.json`      |
+| (none)   | Builds `build/kernel.elf`, the user programs, `build/mkfs`, `build/disk.img`, and `build/compile_commands.json` |
 | `run`    | Boots the kernel on OpenSBI in QEMU, with the serial console in the terminal         |
 | `test`   | Runs the smoke test in QEMU                                                          |
 | `debug`  | Boots halted at the first instruction, waiting for LLDB on port 1234                 |
 | `lldb`   | Starts LLDB attached to the waiting QEMU instance (from a second terminal)           |
-| `format` | Formats C sources and headers (`kernel/`, `lib/`, `inc/`, `user/`) with `clang-format` |
+| `format` | Formats C sources and headers (`kernel/`, `lib/`, `inc/`, `user/`, `tools/`) with `clang-format` |
 | `tidy`   | Checks C sources (`kernel/`, `lib/`, `user/`) with `clang-tidy`                      |
 | `clean`  | Deletes `build/`                                                                     |
 
@@ -102,6 +103,11 @@ and SSH are not available in the container.
 | `echo`         | Print command-line arguments                         |
 | `memcheck`     | Check `sbrk`, demand paging, stack growth, and guard |
 | `blkcheck`     | Check VirtIO-blk sector read/write and error handling |
+| `ls`           | List directory entries                               |
+| `cat`          | Print file contents or copy stdin to stdout          |
+| `rm`           | Remove files or empty directories                    |
+| `mkdir`        | Create directories                                   |
+| `fscheck`      | Check filesystem R/W, directories, and persistence   |
 | `cmd1 \| cmd2` | Connect `cmd1`'s stdout to `cmd2`'s stdin with a pipe |
 
 ## Layout
@@ -112,6 +118,7 @@ and SSH are not available in the container.
 | `user/`                        | U-mode programs, runtime, syscall wrappers, linker script |
 | `lib/`                         | Code linked into both the kernel and user programs       |
 | `inc/`                         | Headers shared across `kernel/`, `user/`, and `lib/`     |
+| `tools/`                       | Host build utilities (`tools/mkfs.c`)                    |
 | `test/`                        | Smoke test (`test/smoke.sh`) run by `make test`          |
 | `docs/`                        | Design documentation                                     |
 | `build/`                       | Everything generated (not in git)                        |
@@ -133,6 +140,7 @@ The [docs](docs/README.md) explain how the kernel works, in reading order:
 - [Processes](docs/processes.md): loading ELF programs, `spawn`, and `wait`
 - [System calls](docs/syscalls.md): calling convention and reference
 - [Devices](docs/devices.md): device tree, UART, PLIC, timer, VirtIO-blk, and SBI
+- [Filesystem](docs/filesystem.md): block cache, on-disk layout, `mkfs`, files, and directories
 - [User programs](docs/user.md): runtime, shell, and adding a program
 - [Build and test](docs/build-and-test.md): Makefile, smoke test, and debugging
 - [Known issues](docs/known-issues.md): bugs and limits of the current design
