@@ -29,7 +29,7 @@ BLKFLAGS  := -drive file=$(DISK),if=none,format=raw,id=hd0 \
              -device virtio-blk-device,drive=hd0,bus=virtio-mmio-bus.0
 
 # Programs packed into the disk image by mkfs; see docs/user.md.
-USER_PROGS := hello count fault orphan regcheck regclobber pipecheck upper echo memcheck blkcheck shell
+USER_PROGS := hello count fault orphan regcheck regclobber pipecheck upper echo memcheck blkcheck ls cat rm mkdir fscheck shell
 
 KERNEL_OBJS := $(patsubst %,$(BUILD)/%.o,$(wildcard kernel/*.S kernel/*.c))
 LIB_OBJS    := $(patsubst %,$(BUILD)/%.o,$(wildcard lib/*.c))
