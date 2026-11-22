@@ -6,43 +6,46 @@ ends and reclaims them (see [Threads](threads.md)).
 
 ## Where programs come from
 
-There is no file system yet. Every user program is linked into the kernel image:
+Every user program is stored as an ELF file on the VirtIO-blk filesystem:
 
-1. `make` builds each program in `USER_PROGS` as its own ELF file,
-   `build/user/<name>.elf`.
-2. `kernel/user.S` includes each ELF file byte for byte with `.incbin`, in
-   `.rodata`, between the symbols `user_<name>` and `user_<name>_end`.
-3. `proc_images[]` in `kernel/proc.c` maps each program name to its two
-   symbols.
-
-`proc_spawn(name, argc, argv)` looks the name up in that table. An unknown name
-gives `-ERR_NOENT`.
+1. `make` builds each program in `USER_PROGS` as `build/user/<name>.elf`.
+2. `build/mkfs` packs all user ELFs into the root directory (`/`) of the disk
+   image (`build/disk.img`, or `build/test.img` for `make test`) under `<name>`.
+3. `proc_spawn(name, argc, argv)` resolves `name` with `fs_lookup(name)` (an
+   unknown name gives `-ERR_NOENT`) and checks `fs_stat` to confirm it is a
+   regular file (`FS_TYPE_FILE`; directories return `-ERR_NOEXEC`).
 
 ## Checking the ELF file (`kernel/elf.c`)
 
-`elf_check(image, size)` accepts only what the loader can handle:
+`kernel/proc.c` streams headers directly from the filesystem rather than loading
+the whole ELF file into a kernel buffer. `elf_check_header(eh, size)` and
+`elf_check_phdr(ph, size)` accept only what the loader can handle:
 
 - ELF magic, 64-bit class, little-endian.
 - Type `ET_EXEC` (a static executable at a fixed address), machine RISC-V.
-- Program headers of the expected size, 8-byte aligned, entirely inside the
-  image.
-- For each `PT_LOAD` segment: the file data lies inside the image, and
-  `filesz <= memsz`.
+- Program headers of the expected size (`sizeof(struct elf_phdr)`), with the
+  program header table lying inside the `size` bytes reported by `fs_stat`.
+- For each `PT_LOAD` segment: the file data (`[offset, offset + filesz)`) lies
+  inside `size`, and `filesz <= memsz`.
 
-The loader trusts these fields after the check, so every bound it relies on is
-checked here first. The embedded programs are built by the same Makefile, but
-the checks keep a broken build from corrupting kernel memory.
+The loader trusts these fields after the checks, so every bound it relies on is
+verified before mapping pages.
 
 ## Loading (`proc_create`)
 
-1. `vm_create()` makes a new page table that shares the kernel mappings.
-2. For each `PT_LOAD` segment, `proc_load`:
+1. Reads the ELF header from offset 0 of `inum` with `fs_read`, validates it
+   with `elf_check_header`, and creates a new page table sharing kernel mappings
+   with `vm_create()`.
+2. Reads each program header from `inum` with `fs_read`, validates it with
+   `elf_check_phdr`, and for each `PT_LOAD` segment calls `proc_load`:
    - Rejects the segment unless its `vaddr` is page aligned, does not overlap
      the previous segment, and ends at or below `PROC_HEAP_LIMIT` (`0x7ffef000`,
      leaving room for a 64 KiB stack and its 4 KiB guard page).
    - Rejects segments that are both writable and executable (W^X).
-   - Allocates and maps one zeroed page at a time, then copies `filesz` bytes
-     from the image. The rest of the segment (`.bss`) stays zero.
+   - Allocates and maps one zeroed page at a time, then reads up to `PAGE_SIZE`
+     bytes of `filesz` directly from `inum` into that page via `fs_read`.
+     Bytes past `filesz` (`.bss`) stay zero, and non-loadable sections such as
+     debug info are never read.
    - Advances `next` (the page-aligned address right after the segments), which
      becomes the process's `heap_base`.
 3. Maps the top stack page (`0x7ffff000`-`0x80000000`) and calls

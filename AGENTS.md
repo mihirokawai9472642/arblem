@@ -19,12 +19,13 @@ project's shared headers in `inc/` are available.
   wrappers (`user/sys.h`), and `user/linker.ld`.
 - `lib/`: shared helpers linked into both the kernel and user programs.
 - `inc/`: headers shared across `kernel/`, `user/`, and `lib/`.
+- `tools/`: host build utilities (`tools/mkfs.c` builds filesystem images).
 - `test/`: smoke test (`test/smoke.sh`) run by `make test`.
 - `docs/`: design documentation; start from `docs/README.md` and
   `docs/architecture.md` (which states the kernel-wide design rules: single
   hart, interrupts off in the kernel, identity-mapped kernel memory, user
   memory in one 1 GiB slot, W^X, and negative `-ERR_*` error codes).
-- `build/`: everything generated (`kernel.elf`, user ELFs,
+- `build/`: everything generated (`kernel.elf`, user ELFs, `mkfs`, `disk.img`,
   `compile_commands.json`, test logs); not in git.
 
 ## Commands
@@ -36,8 +37,9 @@ both sides.
 
 - `docker compose up -d --build`: builds and starts the container. The other
   commands need it running.
-- `docker compose exec dev make`: builds `build/kernel.elf`, the embedded user
-  ELFs (`build/user/*.elf`), and `build/compile_commands.json`.
+- `docker compose exec dev make`: builds `build/kernel.elf`, the user ELFs
+  (`build/user/*.elf`), `build/mkfs`, `build/disk.img`, and
+  `build/compile_commands.json`.
 - `docker compose exec dev make test`: builds if needed and runs the smoke test
   (`test/smoke.sh`) in QEMU, ending with `poweroff`.
 - `docker compose exec dev make run`: boots the kernel in QEMU with the serial
@@ -47,8 +49,8 @@ both sides.
   kept; exit status 124 only means the limit was reached. Prefer `make test` for
   automated checks.
 - `docker compose exec dev make format`: formats all C sources and headers
-  (`kernel/`, `lib/`, `inc/`, `user/`) with `clang-format`. Assembly is not
-  covered.
+  (`kernel/`, `lib/`, `inc/`, `user/`, `tools/`) with `clang-format`. Assembly
+  is not covered.
 - `docker compose exec dev make tidy`: checks all C sources (`kernel/`, `lib/`,
   `user/`) with `clang-tidy`.
 - `docker compose exec dev make clean`: deletes `build/`.
@@ -79,8 +81,8 @@ available there.
   suppresses in system headers, or explicitly justified `NOLINT` annotations
   such as the intentional page fault in `user/fault.c`, do not count).
 - `make test` passes every check (`boot`, `hello`, `count`, `fault`, `unknown`,
-  `regs`, `pipe`, `pipeline`, `args`, `mem`, `blk`, `blk_persist`, `orphan`,
-  `pages`, `poweroff`).
+  `regs`, `pipe`, `pipeline`, `args`, `mem`, `blk`, `fs`, `cat`, `ls`,
+  `blk_persist`, `fs_persist`, `orphan`, `pages`, `poweroff`).
 
 ## Git workflow
 

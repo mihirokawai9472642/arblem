@@ -129,7 +129,10 @@ void thread_start(void) {
 // Release a thread that has exited: its page table, the user pages mapped in
 // it, and its kernel stack. The slot becomes free.
 static void thread_free(struct thread *t) {
-    vm_free(t->vm);
+    if (t->vm != 0) {
+        vm_free(t->vm);
+    }
+
     page_free(t->stack);
     t->stack = 0;
 }

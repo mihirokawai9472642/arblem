@@ -5,10 +5,11 @@
 # any address (0x80200000 for the kernel, 0x40000000 for user programs).
 TARGET  := --target=riscv64-unknown-elf -march=rv64gc -mabi=lp64d -mcmodel=medany
 
-BUILD   := build
-KERNEL  := $(BUILD)/kernel.elf
-DISK    := $(BUILD)/disk.img
+BUILD     := build
+KERNEL    := $(BUILD)/kernel.elf
+DISK      := $(BUILD)/disk.img
 TEST_DISK := $(BUILD)/test.img
+MKFS      := $(BUILD)/mkfs
 
 CC      := clang
 LD      := ld.lld
@@ -17,6 +18,7 @@ QEMU    := qemu-system-riscv64
 # -ffreestanding: no hosted C library; only the compiler's own headers are
 # available. -g emits debug info for LLDB.
 CFLAGS    := $(TARGET) -std=c17 -Wall -Wextra -g -ffreestanding -Iinc
+HOSTFLAGS := -std=c17 -Wall -Wextra -g -Iinc
 ASFLAGS   := $(TARGET) -g -Iinc
 
 # One hart on the virt machine, OpenSBI as firmware, console on stdio.
@@ -26,9 +28,8 @@ QEMUFLAGS := -machine virt -nographic -bios default \
 BLKFLAGS  := -drive file=$(DISK),if=none,format=raw,id=hd0 \
              -device virtio-blk-device,drive=hd0,bus=virtio-mmio-bus.0
 
-# Programs embedded in the kernel. Each also needs an entry in kernel/user.S
-# and kernel/proc.c; see docs/user.md.
-USER_PROGS := hello count fault orphan regcheck regclobber pipecheck upper echo memcheck blkcheck shell
+# Programs packed into the disk image by mkfs; see docs/user.md.
+USER_PROGS := hello count fault orphan regcheck regclobber pipecheck upper echo memcheck blkcheck ls cat rm mkdir fscheck shell
 
 KERNEL_OBJS := $(patsubst %,$(BUILD)/%.o,$(wildcard kernel/*.S kernel/*.c))
 LIB_OBJS    := $(patsubst %,$(BUILD)/%.o,$(wildcard lib/*.c))
@@ -44,14 +45,13 @@ MAKEFLAGS += --no-builtin-rules
 
 .PHONY: all run test debug lldb clean format tidy
 
-all: $(KERNEL) $(BUILD)/compile_commands.json
+all: $(KERNEL) $(DISK) $(BUILD)/compile_commands.json
 
 run: $(KERNEL) $(DISK)
 	$(QEMU) $(QEMUFLAGS) $(BLKFLAGS) -kernel $(KERNEL)
 
-test: $(KERNEL)
-	rm -f $(TEST_DISK)
-	truncate -s 1M $(TEST_DISK)
+test: $(KERNEL) $(MKFS) $(USER_ELFS)
+	$(MKFS) $(TEST_DISK) $(USER_ELFS)
 	sh test/smoke.sh $(QEMU) $(QEMUFLAGS) \
 		-drive file=$(TEST_DISK),if=none,format=raw,id=hd0 \
 		-device virtio-blk-device,drive=hd0,bus=virtio-mmio-bus.0 -kernel $(KERNEL)
@@ -61,9 +61,12 @@ test: $(KERNEL)
 debug: $(KERNEL) $(DISK)
 	$(QEMU) $(QEMUFLAGS) $(BLKFLAGS) -kernel $(KERNEL) -s -S
 
-$(DISK):
+$(MKFS): tools/mkfs.c inc/fs.h
 	@mkdir -p $(dir $@)
-	truncate -s 1M $@
+	$(CC) $(HOSTFLAGS) $< -o $@
+
+$(DISK): $(MKFS) $(USER_ELFS)
+	$(MKFS) $@ $(USER_ELFS)
 
 lldb: $(KERNEL)
 	lldb $(KERNEL) -o 'gdb-remote 1234'
@@ -74,7 +77,7 @@ clean:
 # Formatting and static analysis follow .clang-format and .clang-tidy.
 # Assembly files are not covered.
 format:
-	clang-format -i $(C_SOURCES) $(C_HEADERS)
+	clang-format -i $(C_SOURCES) $(C_HEADERS) $(wildcard tools/*.c)
 
 tidy: $(BUILD)/compile_commands.json
 	clang-tidy -p $(BUILD) $(C_SOURCES)
@@ -96,9 +99,6 @@ $(BUILD)/compile_commands.json: $(ALL_OBJS)
 
 $(KERNEL): kernel/linker.ld $(KERNEL_OBJS) $(LIB_OBJS)
 	$(LD) -T kernel/linker.ld -o $@ $(KERNEL_OBJS) $(LIB_OBJS)
-
-# kernel/user.S pulls the user ELF files in with .incbin.
-$(BUILD)/kernel/user.S.o: $(USER_ELFS)
 
 # Each program: the shared entry point, its own object, and lib/.
 $(USER_ELFS): $(BUILD)/user/%.elf: user/linker.ld $(BUILD)/user/start.c.o $(BUILD)/user/%.c.o $(LIB_OBJS)

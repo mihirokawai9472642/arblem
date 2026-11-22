@@ -18,8 +18,9 @@ qemu-system-riscv64 -machine virt -nographic -bios default \
   M-mode.
 - `-global virtio-mmio.force-legacy=false` configures QEMU's VirtIO MMIO slots
   for Modern VirtIO 1.0+ (MMIO v2).
-- `-drive ... -device virtio-blk-device,...` attaches the 1 MiB raw disk image
-  `build/disk.img` (created automatically if missing) as a VirtIO block device.
+- `-drive ... -device virtio-blk-device,...` attaches the 2 MiB filesystem disk
+  image `build/disk.img` (built by `build/mkfs` with all user ELFs) as a VirtIO
+  block device.
 - `-kernel` loads `build/kernel.elf` at its link address, `0x80200000`.
 
 OpenSBI sets up M-mode, delegates the S-mode interrupts and exceptions to
@@ -56,9 +57,9 @@ The linker script puts `.text.boot` first, so `_start` is at `0x80200000`.
 | `plic_init(base)`, `plic_enable(uart.irq)` | Record the PLIC base, route UART interrupts to this hart's S-mode, and enable `sie.SEIE` |
 | `virtio_blk_init(&info)`, `plic_enable(irq)` | Probe VirtIO MMIO slots for a Modern v2 block device, initialize queue 0, and enable its PLIC IRQ if found |
 | `timer_init(timebase_freq)`            | Compute the 100 Hz interval from the DTB's `timebase-frequency`, arm the first timer interrupt, and enable `sie.STIE` |
-| `proc_spawn("shell", 0, 0)`            | Load the shell's ELF into a new address space, in a new thread       |
-| `thread_set_file(...)` x3              | Give the shell the console as stdin, stdout and stderr               |
-| `thread_start()`                       | Create the idle thread and switch to thread 0                        |
+| `bcache_init()`                        | Initialize the 4 KiB LRU block cache list                             |
+| `thread_create(kernel_init, 0, 0)`     | Create the `kernel_init` boot thread (runs once the scheduler starts) |
+| `thread_start()`                       | Create the idle thread and switch to `kernel_init` (slot 0)           |
 
 `sie` bits only enable interrupt *sources*. The global switch `sstatus.SIE`
 stays off during `kernel_main`, so no interrupt arrives until the first thread
@@ -70,10 +71,21 @@ of the free list) and reclaims any usable RAM above them up to `ram_end`.
 
 ## 4. The first thread
 
-`thread_start` creates the idle thread and switches to slot 0 of the thread
-table. The shell was created first, so slot 0 holds the shell, and the idle
-thread is in slot 1. The switch abandons the boot stack: from here on, code
-always runs on a thread's own kernel stack.
+`thread_start` creates the idle thread in slot 1 and switches to slot 0
+(`kernel_init`). The switch abandons the boot stack: from here on, code always
+runs on a thread's own kernel stack.
+
+`kernel_init` starts in `thread_entry`, clears `sstatus.SIE` to uphold the
+kernel's interrupts-off rule, and then:
+
+1. Calls `fs_init()` to read and validate the superblock from block 1. Because
+   the scheduler and `thread_idle` now exist, `virtio_blk_read` can sleep on DMA
+   completion interrupts while `thread_idle` waits in `wfi`.
+2. Calls `proc_spawn("shell", 0, 0)` to load `shell` from the filesystem into a
+   new address space and thread, and assigns console stdin, stdout, and stderr to
+   it via `thread_set_file`.
+3. Exits via `thread_exit(0)`. With no parent (`parent == -1`), `thread_reap`
+   frees `kernel_init`'s kernel stack and slot right away.
 
 The shell thread starts in `thread_entry` (`kernel/thread.S`), which calls
 `proc_entry` (`kernel/proc.c`), which calls `trap_enter_user`

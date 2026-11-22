@@ -62,7 +62,7 @@ the device tree:
 | UART (from DTB, `0x10000000` + 4 KiB) | `R W`      | Serial port (rounded outward to 4 KiB page bounds) |
 | VirtIO MMIO slots (from DTB, 8 x 4 KiB) | `R W`    | VirtIO MMIO registers                            |
 | `__kernel_start` to `__text_end`     | `R X`       | Kernel code                                      |
-| `__text_end` to `__rodata_end`       | `R`         | Constants, embedded user ELFs                    |
+| `__text_end` to `__rodata_end`       | `R`         | Constants and read-only data                     |
 | `__rodata_end` to `ram_end`          | `R W`       | Data, `.bss`, free pages (below/above DTB), and reserved DTB pages |
 
 `vm_map_mmio` rounds MMIO ranges outward to 4 KiB page boundaries (for instance,

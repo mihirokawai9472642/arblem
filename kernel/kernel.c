@@ -1,14 +1,17 @@
 // kernel_main: bring up each subsystem in order and start the shell.
 // See docs/boot.md.
 
+#include "bcache.h"
 #include "console.h"
 #include "fd.h"
 #include "fdt.h"
+#include "kfs.h"
 #include "kprintf.h"
 #include "page.h"
 #include "panic.h"
 #include "plic.h"
 #include "proc.h"
+#include "riscv.h"
 #include "sbi.h"
 #include "thread.h"
 #include "timer.h"
@@ -18,6 +21,41 @@
 
 // First byte after the kernel image, page aligned (kernel/linker.ld).
 extern char __kernel_end[];
+
+// First kernel thread: runs once the scheduler and idle thread exist, so
+// fs_init and disk-backed proc_spawn can sleep on VirtIO DMA interrupts.
+static void kernel_init(unsigned long arg) {
+    (void)arg;
+
+    // Keep interrupts off in kernel code (matching Arblem's design rule so
+    // sleep/wakeup cannot lose a wakeup). Interrupts turn on in thread_idle
+    // and in U-mode.
+    csr_clear(sstatus, SSTATUS_SIE);
+
+    if (fs_init() == 0) {
+        struct fs_super sb;
+
+        fs_super_info(&sb);
+        kprintf("FS: %x blocks, %x inodes\n", (unsigned long)sb.total_blocks,
+                (unsigned long)sb.num_inodes);
+    } else {
+        kprintf("FS: none\n");
+    }
+
+    int shell = proc_spawn("shell", 0, 0);
+
+    if (shell < 0) {
+        panic("cannot start the shell");
+    }
+
+    // Give the shell the console, which the programs it spawns inherit.
+    thread_set_file(shell, FD_STDIN, console_file());
+    thread_set_file(shell, FD_STDOUT, console_file());
+    thread_set_file(shell, FD_STDERR, console_file());
+
+    // Orphan itself so thread_reap frees this boot thread's stack and slot.
+    thread_exit(0);
+}
 
 // Called from _start in boot.S with the arguments OpenSBI passed in a0 and a1.
 // Interrupts stay globally off (sstatus.SIE = 0) until the first thread runs.
@@ -81,19 +119,12 @@ void kernel_main(unsigned long hartid, unsigned long dtb) {
         kprintf("Disk: none\n");
     }
 
+    bcache_init();
     timer_init(info.timebase_freq);
 
-    int shell = proc_spawn("shell", 0, 0);
-
-    if (shell < 0) {
-        panic("cannot start the shell");
+    if (thread_create(kernel_init, 0, 0) < 0) {
+        panic("cannot start kernel_init");
     }
-
-    // The shell was created before any thread ran, so it inherited no files.
-    // Give it the console, which the programs it spawns then inherit.
-    thread_set_file(shell, FD_STDIN, console_file());
-    thread_set_file(shell, FD_STDOUT, console_file());
-    thread_set_file(shell, FD_STDERR, console_file());
 
     // Does not return.
     thread_start();

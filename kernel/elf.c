@@ -1,11 +1,9 @@
-// ELF validation. The loader in proc.c trusts every offset and size it reads
-// from the image, so each one is bounds-checked here first.
+// ELF validation. The loader in proc.c reads headers from the filesystem and
+// bounds-checks every offset and size here before trusting them.
 
 #include "elf.h"
 
-int elf_check(const char *image, unsigned long size) {
-    const struct elf_header *eh = (const struct elf_header *)image;
-
+int elf_check_header(const struct elf_header *eh, unsigned long size) {
     if (size < sizeof(*eh)) {
         return -1;
     }
@@ -23,9 +21,7 @@ int elf_check(const char *image, unsigned long size) {
         return -1;
     }
 
-    // The program header table is read through struct elf_phdr pointers, so
-    // it must use that size and be aligned for 8-byte fields.
-    if (eh->phentsize != sizeof(struct elf_phdr) || eh->phoff % 8 != 0) {
+    if (eh->phentsize != sizeof(struct elf_phdr)) {
         return -1;
     }
 
@@ -35,17 +31,17 @@ int elf_check(const char *image, unsigned long size) {
         return -1;
     }
 
-    const struct elf_phdr *ph = (const struct elf_phdr *)(image + eh->phoff);
+    return 0;
+}
 
-    for (int i = 0; i < eh->phnum; i++) {
-        if (ph[i].type != ELF_PT_LOAD) {
-            continue;
-        }
+int elf_check_phdr(const struct elf_phdr *ph, unsigned long size) {
+    if (ph->type != ELF_PT_LOAD) {
+        return 0;
+    }
 
-        if (ph[i].offset > size || ph[i].filesz > size - ph[i].offset ||
-            ph[i].filesz > ph[i].memsz) {
-            return -1;
-        }
+    if (ph->offset > size || ph->filesz > size - ph->offset ||
+        ph->filesz > ph->memsz) {
+        return -1;
     }
 
     return 0;

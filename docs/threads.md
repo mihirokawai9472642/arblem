@@ -112,6 +112,7 @@ while (!condition) {
 | `&uart_rx_wait`     | A thread reading the console     | The UART receive interrupt                   |
 | `&blk_busy_wait`    | A thread waiting for the block device | Completion of the active `virtio_blk_rw` request |
 | `&blk_done_wait`    | A thread waiting for block DMA   | The VirtIO-blk interrupt (`virtio_blk_interrupt`) |
+| `&bcache_wait`      | A thread waiting for a cache buffer being read | `bcache_get` when the disk read finishes |
 | `&p->read_end`      | A thread reading an empty pipe   | `pipe_write` or closing the last write end   |
 | `&p->write_end`     | A thread writing a full pipe     | `pipe_read` or closing the last read end     |
 | `&thread_exit_wait` | A parent in `thread_wait`        | Any thread calling `thread_exit`             |
@@ -160,6 +161,8 @@ both orders:
 
 `thread_yield` always runs with interrupts off, and the zombie's page table is
 never the active one there, so freeing needs no lock and no extra TLB flush.
+For kernel-only threads with `vm == 0` (such as `kernel_init`), `thread_free`
+skips `vm_free` and only frees the kernel stack and thread slot.
 
 ## File table
 
@@ -173,9 +176,10 @@ in another thread (used at boot for the shell). `thread_alloc_fd(f)` installs
 A `struct file` (`kernel/file.h`) holds a reference count `ref`, a private
 pointer `priv`, and `read`, `write`, and `close` function pointers. `file_ref`
 and `file_close` (`kernel/file.c`) manage the count; when `ref` reaches zero,
-`close` is called if non-null. Today there are two implementations: the static
-console (`kernel/console.c`, `close = 0`) and one-page ring-buffer pipes
-(`kernel/pipe.c`, freed once both ends close).
+`close` is called if non-null. Today there are three implementations: the static
+console (`kernel/console.c`, `close = 0`), one-page ring-buffer pipes
+(`kernel/pipe.c`, freed once both ends close), and filesystem open files
+(`struct fs_file` in `kernel/kfs.c`, 16-slot static pool).
 
 ## Heap and demand paging
 

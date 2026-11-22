@@ -46,7 +46,10 @@ struct elf_phdr {
     unsigned long align;
 };
 
-// Check that image (size bytes) is an ELF executable for this machine and that
-// every header and PT_LOAD segment lies inside the image. Returns 0 if so,
-// -1 otherwise.
-int elf_check(const char *image, unsigned long size);
+// Check that eh is a valid 64-bit RISC-V ELF executable header and that its
+// program header table lies inside a file of size bytes. Returns 0 or -1.
+int elf_check_header(const struct elf_header *eh, unsigned long size);
+
+// Check that one program header's file data lies inside a file of size bytes
+// and has filesz <= memsz. Returns 0 or -1.
+int elf_check_phdr(const struct elf_phdr *ph, unsigned long size);

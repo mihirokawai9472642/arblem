@@ -5,6 +5,7 @@
 #include "syscall.h"
 #include "error.h"
 #include "file.h"
+#include "kfs.h"
 #include "page.h"
 #include "pipe.h"
 #include "proc.h"
@@ -17,6 +18,9 @@
 
 // Size of the kernel buffer for a program name, including the NUL.
 #define SYSCALL_NAME_MAX 64
+
+// Size of the kernel buffer for a filesystem path, including the NUL.
+#define SYSCALL_PATH_MAX 128
 
 static long syscall_write(unsigned long fd, unsigned long buf,
                           unsigned long len) {
@@ -201,6 +205,56 @@ static long syscall_blk_write(unsigned long sector, unsigned long buf) {
     return virtio_blk_write(sector, kbuf);
 }
 
+static long syscall_open(unsigned long path_addr, unsigned long flags) {
+    char kpath[SYSCALL_PATH_MAX];
+    int n = vm_copy_str_from_user(kpath, path_addr, sizeof(kpath));
+
+    if (n < 0) {
+        return n;
+    }
+
+    struct file *f = 0;
+    int err = fs_open(kpath, (unsigned int)flags, &f);
+
+    if (err < 0) {
+        return err;
+    }
+
+    int fd = thread_alloc_fd(f);
+
+    if (fd < 0) {
+        file_close(f);
+
+        return fd;
+    }
+
+    return fd;
+}
+
+static long syscall_unlink(unsigned long path_addr) {
+    char kpath[SYSCALL_PATH_MAX];
+    int n = vm_copy_str_from_user(kpath, path_addr, sizeof(kpath));
+
+    if (n < 0) {
+        return n;
+    }
+
+    return fs_unlink(kpath);
+}
+
+static long syscall_mkdir(unsigned long path_addr) {
+    char kpath[SYSCALL_PATH_MAX];
+    int n = vm_copy_str_from_user(kpath, path_addr, sizeof(kpath));
+
+    if (n < 0) {
+        return n;
+    }
+
+    int inum = fs_create(kpath, FS_TYPE_DIR);
+
+    return inum < 0 ? inum : 0;
+}
+
 long syscall_handle(unsigned long num, unsigned long arg0, unsigned long arg1,
                     unsigned long arg2) {
     if (num == SYSCALL_WRITE) {
@@ -260,6 +314,18 @@ long syscall_handle(unsigned long num, unsigned long arg0, unsigned long arg1,
 
     if (num == SYSCALL_BLK_WRITE) {
         return syscall_blk_write(arg0, arg1);
+    }
+
+    if (num == SYSCALL_OPEN) {
+        return syscall_open(arg0, arg1);
+    }
+
+    if (num == SYSCALL_UNLINK) {
+        return syscall_unlink(arg0);
+    }
+
+    if (num == SYSCALL_MKDIR) {
+        return syscall_mkdir(arg0);
     }
 
     return -ERR_NOSYS;
