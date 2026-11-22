@@ -4,6 +4,8 @@
 
 #include "fs.h"
 
+struct file;
+
 // Mount the filesystem by reading and validating the superblock at block 1.
 // Returns 0 on success, -1 if no valid filesystem is found.
 int fs_init(void);
@@ -43,3 +45,7 @@ int fs_create(const char *path, unsigned short type);
 // Remove the file or empty directory at path and free its inode and blocks.
 // Returns 0, or a negative -ERR_* code.
 int fs_unlink(const char *path);
+
+// Open path with flags (O_RDONLY, O_WRONLY, O_RDWR, O_CREAT, O_TRUNC) and
+// return a struct file with ref = 1 in *out. Returns 0, or a negative -ERR_*.
+int fs_open(const char *path, unsigned int flags, struct file **out);

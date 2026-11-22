@@ -17,3 +17,6 @@
 #define SYSCALL_SBRK      12 // sbrk(delta)
 #define SYSCALL_BLK_READ  13 // blk_read(sector, buf)
 #define SYSCALL_BLK_WRITE 14 // blk_write(sector, buf)
+#define SYSCALL_OPEN      15 // open(path, flags)
+#define SYSCALL_UNLINK    16 // unlink(path)
+#define SYSCALL_MKDIR     17 // mkdir(path)

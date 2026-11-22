@@ -4,7 +4,9 @@
 #include "kfs.h"
 #include "bcache.h"
 #include "error.h"
+#include "file.h"
 #include "str.h"
+#include "vm.h"
 
 static struct fs_super fs_sb;
 static int fs_ready;
@@ -904,4 +906,176 @@ int fs_unlink(const char *path) {
     }
 
     return fs_ifree((unsigned int)child);
+}
+
+#define FS_OPEN_MAX 16
+#define FS_IO_CHUNK 128
+
+// Open file description backed by an on-disk inode.
+struct fs_file {
+    struct file file;
+    int in_use;
+    unsigned int inum;
+    unsigned int off;
+};
+
+static struct fs_file fs_files[FS_OPEN_MAX];
+
+static long fs_file_read(struct file *f, unsigned long buf, unsigned long len) {
+    struct fs_file *ff = f->priv;
+    unsigned char kbuf[FS_IO_CHUNK];
+    unsigned long done = 0;
+
+    while (done < len) {
+        unsigned long n = len - done;
+
+        if (n > FS_IO_CHUNK) {
+            n = FS_IO_CHUNK;
+        }
+
+        long r = fs_read(ff->inum, ff->off, kbuf, (unsigned int)n);
+
+        if (r < 0) {
+            return done > 0 ? (long)done : r;
+        }
+
+        if (r == 0) {
+            break;
+        }
+
+        if (vm_copy_to_user(buf + done, kbuf, (unsigned long)r) != 0) {
+            return -ERR_FAULT;
+        }
+
+        ff->off += (unsigned int)r;
+        done += (unsigned long)r;
+
+        if ((unsigned long)r < n) {
+            break;
+        }
+    }
+
+    return (long)done;
+}
+
+static long fs_file_write(struct file *f, unsigned long buf,
+                          unsigned long len) {
+    struct fs_file *ff = f->priv;
+    unsigned char kbuf[FS_IO_CHUNK];
+    unsigned long done = 0;
+
+    while (done < len) {
+        unsigned long n = len - done;
+
+        if (n > FS_IO_CHUNK) {
+            n = FS_IO_CHUNK;
+        }
+
+        if (vm_copy_from_user(kbuf, buf + done, n) != 0) {
+            return -ERR_FAULT;
+        }
+
+        long w = fs_write(ff->inum, ff->off, kbuf, (unsigned int)n);
+
+        if (w < 0) {
+            return done > 0 ? (long)done : w;
+        }
+
+        ff->off += (unsigned int)w;
+        done += (unsigned long)w;
+
+        if ((unsigned long)w < n) {
+            break;
+        }
+    }
+
+    return (long)done;
+}
+
+static void fs_file_close(struct file *f) {
+    struct fs_file *ff = f->priv;
+
+    ff->in_use = 0;
+    ff->inum = 0;
+    ff->off = 0;
+}
+
+int fs_open(const char *path, unsigned int flags, struct file **out) {
+    if (!fs_ready) {
+        return -ERR_IO;
+    }
+
+    unsigned int valid_flags = O_WRONLY | O_RDWR | O_CREAT | O_TRUNC;
+
+    if ((flags & ~valid_flags) != 0) {
+        return -ERR_INVAL;
+    }
+
+    unsigned int mode = flags & 3U;
+
+    if (mode == 3U) {
+        return -ERR_INVAL;
+    }
+
+    int readable = (mode == O_RDONLY || mode == O_RDWR);
+    int writable = (mode == O_WRONLY || mode == O_RDWR);
+
+    if ((flags & O_TRUNC) != 0 && !writable) {
+        return -ERR_INVAL;
+    }
+
+    int inum = fs_lookup(path);
+
+    if (inum == -ERR_NOENT && (flags & O_CREAT) != 0) {
+        inum = fs_create(path, FS_TYPE_FILE);
+    }
+
+    if (inum < 0) {
+        return inum;
+    }
+
+    unsigned short type = 0;
+    int err = fs_stat((unsigned int)inum, &type, 0);
+
+    if (err < 0) {
+        return err;
+    }
+
+    if (type == FS_TYPE_DIR && (writable || (flags & O_TRUNC) != 0)) {
+        return -ERR_ISDIR;
+    }
+
+    struct fs_file *ff = 0;
+
+    for (int i = 0; i < FS_OPEN_MAX; i++) {
+        if (!fs_files[i].in_use) {
+            ff = &fs_files[i];
+            break;
+        }
+    }
+
+    if (ff == 0) {
+        return -ERR_MFILE;
+    }
+
+    if ((flags & O_TRUNC) != 0) {
+        err = fs_trunc((unsigned int)inum);
+
+        if (err < 0) {
+            return err;
+        }
+    }
+
+    ff->in_use = 1;
+    ff->inum = (unsigned int)inum;
+    ff->off = 0;
+    ff->file.ref = 1;
+    ff->file.priv = ff;
+    ff->file.read = readable ? fs_file_read : 0;
+    ff->file.write = writable ? fs_file_write : 0;
+    ff->file.close = fs_file_close;
+
+    *out = &ff->file;
+
+    return 0;
 }

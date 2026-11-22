@@ -3,6 +3,7 @@
 // System call wrappers for user programs. See docs/syscalls.md.
 
 #include "fd.h"
+#include "fs.h"
 #include "str.h"
 #include "sysnum.h"
 
@@ -117,4 +118,20 @@ static inline long sys_blk_read(unsigned long sector, void *buf) {
 // Write one 512-byte disk sector from buf. Returns 0, -ERR_IO, or -ERR_FAULT.
 static inline long sys_blk_write(unsigned long sector, const void *buf) {
     return sys_call(SYSCALL_BLK_WRITE, (long)sector, (long)buf, 0);
+}
+
+// Open path with flags from fs.h (O_RDONLY, O_WRONLY, O_RDWR, O_CREAT,
+// O_TRUNC). Returns a new file descriptor, or a negative -ERR_* code.
+static inline long sys_open(const char *path, unsigned int flags) {
+    return sys_call(SYSCALL_OPEN, (long)path, (long)flags, 0);
+}
+
+// Remove the file or empty directory at path. Returns 0, or a negative -ERR_*.
+static inline long sys_unlink(const char *path) {
+    return sys_call(SYSCALL_UNLINK, (long)path, 0, 0);
+}
+
+// Create a directory at path. Returns 0, or a negative -ERR_* code.
+static inline long sys_mkdir(const char *path) {
+    return sys_call(SYSCALL_MKDIR, (long)path, 0, 0);
 }
