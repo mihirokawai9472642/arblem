@@ -35,3 +35,11 @@ long fs_read(unsigned int inum, unsigned int off, void *dst, unsigned int len);
 // or a negative -ERR_*.
 long fs_write(unsigned int inum, unsigned int off, const void *src,
               unsigned int len);
+
+// Create a new file (FS_TYPE_FILE) or directory (FS_TYPE_DIR) at path.
+// Returns the new inode number (> 0), or a negative -ERR_* code.
+int fs_create(const char *path, unsigned short type);
+
+// Remove the file or empty directory at path and free its inode and blocks.
+// Returns 0, or a negative -ERR_* code.
+int fs_unlink(const char *path);

@@ -597,3 +597,311 @@ int fs_lookup(const char *path) {
         cur = (unsigned int)next;
     }
 }
+
+static int fs_ialloc(unsigned short type, unsigned int *out_inum) {
+    for (unsigned int inum = FS_ROOT_INUM + 1; inum < fs_sb.num_inodes;
+         inum++) {
+        struct fs_dinode ino;
+        int err = fs_inode_read(inum, &ino);
+
+        if (err < 0) {
+            return err;
+        }
+
+        if (ino.type != FS_TYPE_FREE) {
+            continue;
+        }
+
+        fs_zero(&ino, sizeof(ino));
+        ino.type = type;
+        ino.nlink = 1;
+        err = fs_inode_write(inum, &ino);
+
+        if (err < 0) {
+            return err;
+        }
+
+        *out_inum = inum;
+
+        return 0;
+    }
+
+    return -ERR_NOSPC;
+}
+
+static int fs_ifree(unsigned int inum) {
+    int err = fs_trunc(inum);
+
+    if (err < 0) {
+        return err;
+    }
+
+    struct fs_dinode empty;
+
+    fs_zero(&empty, sizeof(empty));
+
+    return fs_inode_write(inum, &empty);
+}
+
+// Add (name, child_inum) to directory dir_inum, reusing a freed slot if one
+// exists or appending at the end.
+static int fs_dir_add(unsigned int dir_inum, const char *name,
+                      unsigned int child_inum) {
+    struct fs_dinode ino;
+    int err = fs_inode_read(dir_inum, &ino);
+
+    if (err < 0) {
+        return err;
+    }
+
+    if (ino.type != FS_TYPE_DIR) {
+        return -ERR_NOTDIR;
+    }
+
+    struct fs_dirent de;
+    unsigned int slot_off = ino.size;
+
+    for (unsigned int off = 0; off + sizeof(de) <= ino.size;
+         off += sizeof(de)) {
+        fs_zero(&de, sizeof(de));
+
+        long n = fs_read(dir_inum, off, &de, sizeof(de));
+
+        if (n < 0) {
+            return (int)n;
+        }
+
+        if (n != (long)sizeof(de)) {
+            break;
+        }
+
+        if (de.inum == 0) {
+            slot_off = off;
+            break;
+        }
+    }
+
+    fs_zero(&de, sizeof(de));
+    de.inum = child_inum;
+    fs_copy(de.name, name, str_len(name));
+
+    long w = fs_write(dir_inum, slot_off, &de, sizeof(de));
+
+    if (w < 0) {
+        return (int)w;
+    }
+
+    return w == (long)sizeof(de) ? 0 : -ERR_NOSPC;
+}
+
+// Return 1 if directory dir_inum has no entries other than "." and "..",
+// 0 if it has other entries, or a negative -ERR_* code on error.
+static int fs_dir_empty(unsigned int dir_inum) {
+    struct fs_dinode ino;
+    int err = fs_inode_read(dir_inum, &ino);
+
+    if (err < 0) {
+        return err;
+    }
+
+    struct fs_dirent de;
+
+    for (unsigned int off = 0; off + sizeof(de) <= ino.size;
+         off += sizeof(de)) {
+        fs_zero(&de, sizeof(de));
+
+        long n = fs_read(dir_inum, off, &de, sizeof(de));
+
+        if (n < 0) {
+            return (int)n;
+        }
+
+        if (n != (long)sizeof(de)) {
+            break;
+        }
+
+        if (de.inum != 0 && !str_equal(de.name, ".") &&
+            !str_equal(de.name, "..")) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+// Resolve all path components except the last, storing the parent directory
+// inode in *out_parent and the final component name in out_name.
+static int fs_lookup_parent(const char *path, unsigned int *out_parent,
+                            char *out_name) {
+    const char *p = path;
+    char cur_name[FS_NAME_MAX];
+    int r = fs_path_next(&p, cur_name);
+
+    if (r < 0) {
+        return r;
+    }
+
+    if (r == 0) {
+        return -ERR_INVAL;
+    }
+
+    unsigned int cur = FS_ROOT_INUM;
+
+    for (;;) {
+        char next_name[FS_NAME_MAX];
+
+        r = fs_path_next(&p, next_name);
+
+        if (r < 0) {
+            return r;
+        }
+
+        if (r == 0) {
+            unsigned short type = 0;
+            int err = fs_stat(cur, &type, 0);
+
+            if (err < 0) {
+                return err;
+            }
+
+            if (type != FS_TYPE_DIR) {
+                return -ERR_NOTDIR;
+            }
+
+            *out_parent = cur;
+            fs_copy(out_name, cur_name, str_len(cur_name) + 1);
+
+            return 0;
+        }
+
+        int next = fs_dir_lookup(cur, cur_name, 0);
+
+        if (next < 0) {
+            return next;
+        }
+
+        cur = (unsigned int)next;
+        fs_copy(cur_name, next_name, str_len(next_name) + 1);
+    }
+}
+
+int fs_create(const char *path, unsigned short type) {
+    if (!fs_ready) {
+        return -ERR_IO;
+    }
+
+    if (type != FS_TYPE_FILE && type != FS_TYPE_DIR) {
+        return -ERR_INVAL;
+    }
+
+    unsigned int parent = 0;
+    char name[FS_NAME_MAX];
+    int err = fs_lookup_parent(path, &parent, name);
+
+    if (err < 0) {
+        return err;
+    }
+
+    if (str_equal(name, ".") || str_equal(name, "..")) {
+        return -ERR_INVAL;
+    }
+
+    int existing = fs_dir_lookup(parent, name, 0);
+
+    if (existing >= 0) {
+        return -ERR_EXIST;
+    }
+
+    if (existing != -ERR_NOENT) {
+        return existing;
+    }
+
+    unsigned int inum = 0;
+
+    err = fs_ialloc(type, &inum);
+
+    if (err < 0) {
+        return err;
+    }
+
+    if (type == FS_TYPE_DIR) {
+        err = fs_dir_add(inum, ".", inum);
+
+        if (err == 0) {
+            err = fs_dir_add(inum, "..", parent);
+        }
+
+        if (err < 0) {
+            fs_ifree(inum);
+
+            return err;
+        }
+    }
+
+    err = fs_dir_add(parent, name, inum);
+
+    if (err < 0) {
+        fs_ifree(inum);
+
+        return err;
+    }
+
+    return (int)inum;
+}
+
+int fs_unlink(const char *path) {
+    if (!fs_ready) {
+        return -ERR_IO;
+    }
+
+    unsigned int parent = 0;
+    char name[FS_NAME_MAX];
+    int err = fs_lookup_parent(path, &parent, name);
+
+    if (err < 0) {
+        return err;
+    }
+
+    if (str_equal(name, ".") || str_equal(name, "..")) {
+        return -ERR_INVAL;
+    }
+
+    unsigned int entry_off = 0;
+    int child = fs_dir_lookup(parent, name, &entry_off);
+
+    if (child < 0) {
+        return child;
+    }
+
+    unsigned short type = 0;
+
+    err = fs_stat((unsigned int)child, &type, 0);
+
+    if (err < 0) {
+        return err;
+    }
+
+    if (type == FS_TYPE_DIR) {
+        int empty = fs_dir_empty((unsigned int)child);
+
+        if (empty < 0) {
+            return empty;
+        }
+
+        if (empty == 0) {
+            return -ERR_NOTEMPTY;
+        }
+    }
+
+    struct fs_dirent empty_de;
+
+    fs_zero(&empty_de, sizeof(empty_de));
+
+    long w = fs_write(parent, entry_off, &empty_de, sizeof(empty_de));
+
+    if (w < 0) {
+        return (int)w;
+    }
+
+    return fs_ifree((unsigned int)child);
+}
