@@ -28,8 +28,7 @@ QEMUFLAGS := -machine virt -nographic -bios default \
 BLKFLAGS  := -drive file=$(DISK),if=none,format=raw,id=hd0 \
              -device virtio-blk-device,drive=hd0,bus=virtio-mmio-bus.0
 
-# Programs embedded in the kernel. Each also needs an entry in kernel/user.S
-# and kernel/proc.c; see docs/user.md.
+# Programs packed into the disk image by mkfs; see docs/user.md.
 USER_PROGS := hello count fault orphan regcheck regclobber pipecheck upper echo memcheck blkcheck shell
 
 KERNEL_OBJS := $(patsubst %,$(BUILD)/%.o,$(wildcard kernel/*.S kernel/*.c))
@@ -100,9 +99,6 @@ $(BUILD)/compile_commands.json: $(ALL_OBJS)
 
 $(KERNEL): kernel/linker.ld $(KERNEL_OBJS) $(LIB_OBJS)
 	$(LD) -T kernel/linker.ld -o $@ $(KERNEL_OBJS) $(LIB_OBJS)
-
-# kernel/user.S pulls the user ELF files in with .incbin.
-$(BUILD)/kernel/user.S.o: $(USER_ELFS)
 
 # Each program: the shared entry point, its own object, and lib/.
 $(USER_ELFS): $(BUILD)/user/%.elf: user/linker.ld $(BUILD)/user/start.c.o $(BUILD)/user/%.c.o $(LIB_OBJS)

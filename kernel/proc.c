@@ -1,51 +1,16 @@
-// Processes: load an embedded ELF program into a new address space and start
-// a thread that enters it in U-mode. See docs/processes.md.
+// Processes: load an ELF program from the filesystem into a new address space
+// and start a thread that enters it in U-mode. See docs/processes.md.
 
 #include "proc.h"
 #include "elf.h"
 #include "error.h"
+#include "kfs.h"
 #include "page.h"
 #include "riscv.h"
 #include "str.h"
 #include "thread.h"
 #include "trap.h"
 #include "vm.h"
-
-// An ELF file embedded in the kernel image by user.S.
-struct proc_image {
-    const char *name;
-    const char *start;
-    const char *end;
-};
-
-extern char user_hello[], user_hello_end[];
-extern char user_count[], user_count_end[];
-extern char user_fault[], user_fault_end[];
-extern char user_orphan[], user_orphan_end[];
-extern char user_regcheck[], user_regcheck_end[];
-extern char user_regclobber[], user_regclobber_end[];
-extern char user_pipecheck[], user_pipecheck_end[];
-extern char user_upper[], user_upper_end[];
-extern char user_echo[], user_echo_end[];
-extern char user_memcheck[], user_memcheck_end[];
-extern char user_blkcheck[], user_blkcheck_end[];
-extern char user_shell[], user_shell_end[];
-
-// The programs proc_spawn can start, by name.
-static const struct proc_image proc_images[] = {
-    {"hello", user_hello, user_hello_end},
-    {"count", user_count, user_count_end},
-    {"fault", user_fault, user_fault_end},
-    {"orphan", user_orphan, user_orphan_end},
-    {"regcheck", user_regcheck, user_regcheck_end},
-    {"regclobber", user_regclobber, user_regclobber_end},
-    {"pipecheck", user_pipecheck, user_pipecheck_end},
-    {"upper", user_upper, user_upper_end},
-    {"echo", user_echo, user_echo_end},
-    {"memcheck", user_memcheck, user_memcheck_end},
-    {"blkcheck", user_blkcheck, user_blkcheck_end},
-    {"shell", user_shell, user_shell_end},
-};
 
 // Thread entry function of every process: enter U-mode at the ELF entry point
 // with the stack and argc/argv prepared by proc_create. Does not return.
@@ -97,10 +62,10 @@ static unsigned long proc_perm(unsigned int flags) {
     return perm;
 }
 
-// Map and fill one PT_LOAD segment. *next is the first address the segment may
-// use; it is advanced past the segment, so segments must come in address order
-// and never share a page. Bytes past filesz stay zero (.bss).
-static int proc_load(unsigned long *vm, const char *image,
+// Map and fill one PT_LOAD segment from inode inum. *next is the first address
+// the segment may use; it is advanced past the segment, so segments must come
+// in address order and never share a page. Bytes past filesz stay zero (.bss).
+static int proc_load(unsigned long *vm, unsigned int inum,
                      const struct elf_phdr *ph, unsigned long *next) {
     unsigned long end = PROC_HEAP_LIMIT;
 
@@ -121,8 +86,18 @@ static int proc_load(unsigned long *vm, const char *image,
             return -ERR_NOMEM;
         }
 
-        for (unsigned long i = 0; i < PAGE_SIZE && off + i < ph->filesz; i++) {
-            page[i] = image[ph->offset + off + i];
+        if (off < ph->filesz) {
+            unsigned int n = PAGE_SIZE;
+
+            if (ph->filesz - off < n) {
+                n = (unsigned int)(ph->filesz - off);
+            }
+
+            long r = fs_read(inum, (unsigned int)(ph->offset + off), page, n);
+
+            if (r != (long)n) {
+                return r < 0 ? (int)r : -ERR_NOEXEC;
+            }
         }
     }
 
@@ -185,17 +160,21 @@ static int proc_build_stack(char *stack_page, int argc, const char *const *argv,
     return 0;
 }
 
-// Build an address space from an ELF image, map a one-page stack with
-// argc/argv, and create the thread. Returns the thread ID or a negative error;
-// on error everything allocated so far is freed.
-static int proc_create(const char *image, unsigned long size, int argc,
+// Build an address space from an ELF file at inode inum, map a one-page stack
+// with argc/argv, and create the thread. Returns the thread ID or a negative
+// error; on error everything allocated so far is freed.
+static int proc_create(unsigned int inum, unsigned long size, int argc,
                        const char *const *argv) {
-    if (elf_check(image, size) != 0) {
-        return -ERR_NOEXEC;
+    struct elf_header eh;
+    long r = fs_read(inum, 0, &eh, sizeof(eh));
+
+    if (r < 0) {
+        return (int)r;
     }
 
-    const struct elf_header *eh = (const struct elf_header *)image;
-    const struct elf_phdr *ph = (const struct elf_phdr *)(image + eh->phoff);
+    if (r != (long)sizeof(eh) || elf_check_header(&eh, size) != 0) {
+        return -ERR_NOEXEC;
+    }
 
     unsigned long *vm = vm_create();
 
@@ -206,12 +185,28 @@ static int proc_create(const char *image, unsigned long size, int argc,
     unsigned long next = PROC_BASE;
     int err;
 
-    for (int i = 0; i < eh->phnum; i++) {
-        if (ph[i].type != ELF_PT_LOAD) {
+    for (unsigned int i = 0; i < eh.phnum; i++) {
+        struct elf_phdr ph;
+        unsigned int ph_off =
+            (unsigned int)(eh.phoff + (unsigned long)i * sizeof(ph));
+
+        r = fs_read(inum, ph_off, &ph, sizeof(ph));
+
+        if (r < 0) {
+            err = (int)r;
+            goto fail;
+        }
+
+        if (r != (long)sizeof(ph) || elf_check_phdr(&ph, size) != 0) {
+            err = -ERR_NOEXEC;
+            goto fail;
+        }
+
+        if (ph.type != ELF_PT_LOAD) {
             continue;
         }
 
-        err = proc_load(vm, image, &ph[i], &next);
+        err = proc_load(vm, inum, &ph, &next);
 
         if (err < 0) {
             goto fail;
@@ -235,7 +230,7 @@ static int proc_create(const char *image, unsigned long size, int argc,
         goto fail;
     }
 
-    int id = thread_create(proc_entry, eh->entry, vm);
+    int id = thread_create(proc_entry, eh.entry, vm);
 
     if (id < 0) {
         err = id;
@@ -261,14 +256,23 @@ int proc_spawn(const char *name, int argc, const char *const *argv) {
         argv = default_argv;
     }
 
-    for (unsigned long i = 0; i < sizeof(proc_images) / sizeof(proc_images[0]);
-         i++) {
-        if (str_equal(name, proc_images[i].name)) {
-            return proc_create(proc_images[i].start,
-                               proc_images[i].end - proc_images[i].start, argc,
-                               argv);
-        }
+    int inum = fs_lookup(name);
+
+    if (inum < 0) {
+        return inum;
     }
 
-    return -ERR_NOENT;
+    unsigned short type = 0;
+    unsigned int size = 0;
+    int err = fs_stat((unsigned int)inum, &type, &size);
+
+    if (err < 0) {
+        return err;
+    }
+
+    if (type != FS_TYPE_FILE) {
+        return -ERR_NOEXEC;
+    }
+
+    return proc_create((unsigned int)inum, size, argc, argv);
 }
