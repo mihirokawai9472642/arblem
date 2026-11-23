@@ -3,6 +3,7 @@
 
 #include "bcache.h"
 #include "console.h"
+#include "cpu.h"
 #include "fd.h"
 #include "fdt.h"
 #include "kfs.h"
@@ -60,9 +61,11 @@ static void kernel_init(unsigned long arg) {
 // Called from _start in boot.S with the arguments OpenSBI passed in a0 and a1.
 // Interrupts stay globally off (sstatus.SIE = 0) until the first thread runs.
 void kernel_main(unsigned long hartid, unsigned long dtb) {
+    cpu_init(hartid);
+
     kprintf("Hello World from Arblem :)\n");
 
-    kprintf("HartID: %x\n", hartid);
+    kprintf("HartID: %x\n", cpu_current()->hartid);
     kprintf("DTB: %x\n", dtb);
     kprintf("SBI: %x\n", sbi_spec_version());
 
