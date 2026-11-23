@@ -12,7 +12,6 @@
 #include "panic.h"
 #include "plic.h"
 #include "proc.h"
-#include "riscv.h"
 #include "sbi.h"
 #include "thread.h"
 #include "timer.h"
@@ -28,11 +27,6 @@ extern char __kernel_end[];
 static void kernel_init(unsigned long arg) {
     (void)arg;
 
-    // Keep interrupts off in kernel code (matching Arblem's design rule so
-    // sleep/wakeup cannot lose a wakeup). Interrupts turn on in thread_idle
-    // and in U-mode.
-    csr_clear(sstatus, SSTATUS_SIE);
-
     if (fs_init() == 0) {
         struct fs_super sb;
 
@@ -43,16 +37,19 @@ static void kernel_init(unsigned long arg) {
         kprintf("FS: none\n");
     }
 
+    // Give kernel_init the console so shell inherits stdin, stdout, and stderr
+    // atomically during proc_spawn before another hart can run it.
+    if (thread_alloc_fd(console_file()) != FD_STDIN ||
+        thread_alloc_fd(console_file()) != FD_STDOUT ||
+        thread_alloc_fd(console_file()) != FD_STDERR) {
+        panic("cannot attach console");
+    }
+
     int shell = proc_spawn("shell", 0, 0);
 
     if (shell < 0) {
         panic("cannot start the shell");
     }
-
-    // Give the shell the console, which the programs it spawns inherit.
-    thread_set_file(shell, FD_STDIN, console_file());
-    thread_set_file(shell, FD_STDOUT, console_file());
-    thread_set_file(shell, FD_STDERR, console_file());
 
     // Orphan itself so thread_reap frees this boot thread's stack and slot.
     thread_exit(0);
@@ -125,9 +122,13 @@ void kernel_main(unsigned long hartid, unsigned long dtb) {
     bcache_init();
     timer_init(info.timebase_freq);
 
-    if (thread_create(kernel_init, 0, 0) < 0) {
+    int init = thread_create(kernel_init, 0, 0);
+
+    if (init < 0) {
         panic("cannot start kernel_init");
     }
+
+    thread_ready(init);
 
     // Does not return.
     thread_start();

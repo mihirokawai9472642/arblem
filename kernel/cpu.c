@@ -20,5 +20,7 @@ void cpu_init(unsigned long hartid) {
     struct cpu *c = &cpus[hartid];
 
     c->hartid = hartid;
+    c->current = -1;
+    c->idle = -1;
     __asm__ volatile("mv tp, %0" : : "r"(c) : "memory");
 }

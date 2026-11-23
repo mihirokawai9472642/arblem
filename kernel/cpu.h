@@ -20,6 +20,8 @@ struct cpu {
     unsigned long *vm_root; // Active page table root on this hart
     int lock_depth;         // Depth of spinlock_push_off() nesting
     int int_was_on;         // Whether sstatus.SIE was set at lock_depth 0
+    int current;            // Running thread ID on this hart, -1 until started
+    int idle;               // This hart's dedicated idle thread ID
 };
 
 // Initialize this hart's struct cpu and point tp at it. Must be called before

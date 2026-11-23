@@ -239,6 +239,7 @@ static int proc_create(unsigned int inum, unsigned long size, int argc,
 
     thread_set_start(id, user_sp, (unsigned long)argc, user_argv);
     thread_set_heap(id, next);
+    thread_ready(id);
 
     return id;
 
