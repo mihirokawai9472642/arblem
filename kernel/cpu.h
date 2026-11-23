@@ -18,6 +18,8 @@ struct cpu {
     unsigned long user_sp; // Scratch slot for user sp during trap entry
     unsigned long hartid;  // Hardware thread ID from OpenSBI
     unsigned long *vm_root; // Active page table root on this hart
+    int lock_depth;         // Depth of spinlock_push_off() nesting
+    int int_was_on;         // Whether sstatus.SIE was set at lock_depth 0
 };
 
 // Initialize this hart's struct cpu and point tp at it. Must be called before
