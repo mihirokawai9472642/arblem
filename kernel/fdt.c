@@ -50,13 +50,18 @@ static int fdt_compat_has(const char *prop, unsigned int len,
     return 0;
 }
 
-// Properties collected for the current leaf node before FDT_END_NODE commits
-// them (in QEMU's DTB, reg and interrupts appear before compatible).
+// Properties collected for the current node before a child node begins or
+// FDT_END_NODE commits them (in QEMU's DTB, reg and interrupts appear before
+// compatible, and cpu@N nodes have an interrupt-controller child node).
 struct fdt_node {
     unsigned long reg_base;
     unsigned long reg_size;
+    unsigned long cpu_reg;
     unsigned int irq;
     int has_reg;
+    int has_cpu_reg;
+    int is_cpu;
+    int disabled;
     int is_memory;
     int is_plic;
     int is_uart;
@@ -66,8 +71,12 @@ struct fdt_node {
 static void fdt_node_reset(struct fdt_node *n) {
     n->reg_base = 0;
     n->reg_size = 0;
+    n->cpu_reg = 0;
     n->irq = 0;
     n->has_reg = 0;
+    n->has_cpu_reg = 0;
+    n->is_cpu = 0;
+    n->disabled = 0;
     n->is_memory = 0;
     n->is_plic = 0;
     n->is_uart = 0;
@@ -75,6 +84,11 @@ static void fdt_node_reset(struct fdt_node *n) {
 }
 
 static void fdt_node_commit(const struct fdt_node *n, struct fdt_info *out) {
+    if (n->is_cpu && n->has_cpu_reg && !n->disabled &&
+        out->hart_count < FDT_HART_MAX) {
+        out->harts[out->hart_count++] = n->cpu_reg;
+    }
+
     if (!n->has_reg) {
         return;
     }
@@ -157,6 +171,7 @@ int fdt_parse(unsigned long dtb, struct fdt_info *out) {
             }
 
             p += fdt_align4(n + 1);
+            fdt_node_commit(&cur, out);
             fdt_node_reset(&cur);
             continue;
         }
@@ -192,15 +207,30 @@ int fdt_parse(unsigned long dtb, struct fdt_info *out) {
 
             p += padded;
 
-            if (str_equal(pname, "reg") && plen >= 16) {
-                cur.reg_base = be64(val);
-                cur.reg_size = be64(val + 8);
-                cur.has_reg = 1;
+            if (str_equal(pname, "reg")) {
+                if (plen >= 16) {
+                    cur.reg_base = be64(val);
+                    cur.reg_size = be64(val + 8);
+                    cur.has_reg = 1;
+                } else if (plen == 4) {
+                    cur.cpu_reg = be32(val);
+                    cur.has_cpu_reg = 1;
+                } else if (plen == 8) {
+                    cur.cpu_reg = be64(val);
+                    cur.has_cpu_reg = 1;
+                }
             } else if (str_equal(pname, "interrupts") && plen >= 4) {
                 cur.irq = be32(val);
-            } else if (str_equal(pname, "device_type") &&
-                       fdt_compat_has((const char *)val, plen, "memory")) {
-                cur.is_memory = 1;
+            } else if (str_equal(pname, "device_type")) {
+                if (fdt_compat_has((const char *)val, plen, "memory")) {
+                    cur.is_memory = 1;
+                } else if (fdt_compat_has((const char *)val, plen, "cpu")) {
+                    cur.is_cpu = 1;
+                }
+            } else if (str_equal(pname, "status")) {
+                if (!fdt_compat_has((const char *)val, plen, "okay")) {
+                    cur.disabled = 1;
+                }
             } else if (str_equal(pname, "compatible")) {
                 if (fdt_compat_has((const char *)val, plen, "riscv,plic0") ||
                     fdt_compat_has((const char *)val, plen,

@@ -21,9 +21,9 @@ CFLAGS    := $(TARGET) -std=c17 -Wall -Wextra -g -ffreestanding -Iinc
 HOSTFLAGS := -std=c17 -Wall -Wextra -g -Iinc
 ASFLAGS   := $(TARGET) -g -Iinc
 
-# One hart on the virt machine, OpenSBI as firmware, console on stdio.
+# Two harts on the virt machine, OpenSBI as firmware, console on stdio.
 # Force modern VirtIO 1.0+ (MMIO v2) instead of legacy v1.
-QEMUFLAGS := -machine virt -nographic -bios default \
+QEMUFLAGS := -machine virt -smp 2 -nographic -bios default \
              -global virtio-mmio.force-legacy=false
 BLKFLAGS  := -drive file=$(DISK),if=none,format=raw,id=hd0 \
              -device virtio-blk-device,drive=hd0,bus=virtio-mmio-bus.0

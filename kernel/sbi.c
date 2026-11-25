@@ -8,12 +8,14 @@
 #define SBI_EXT_BASE 0x10
 #define SBI_EXT_SRST 0x53525354 // "SRST": System Reset
 #define SBI_EXT_DBCN 0x4442434e // "DBCN": Debug Console
+#define SBI_EXT_HSM  0x48534d   // "HSM": Hart State Management
 
 // Function IDs within those extensions.
 #define SBI_BASE_GET_SPEC_VERSION 0
 #define SBI_SRST_SYSTEM_RESET     0
 #define SBI_SRST_TYPE_SHUTDOWN    0
 #define SBI_DBCN_WRITE            0
+#define SBI_HSM_HART_START        0
 
 // Every SBI call returns an error code in a0 and a value in a1.
 struct sbi_ret {
@@ -69,4 +71,12 @@ long sbi_console_write(const char *buf, unsigned long len) {
     }
 
     return SBI_SUCCESS;
+}
+
+long sbi_hart_start(unsigned long hartid, unsigned long start_addr,
+                    unsigned long opaque) {
+    struct sbi_ret ret =
+        sbi_call(SBI_EXT_HSM, SBI_HSM_HART_START, hartid, start_addr, opaque);
+
+    return ret.error;
 }

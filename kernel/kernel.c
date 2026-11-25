@@ -22,6 +22,16 @@
 // First byte after the kernel image, page aligned (kernel/linker.ld).
 extern char __kernel_end[];
 
+// Secondary hart assembly entry point (kernel/boot.S).
+extern void _start_secondary(void);
+
+// Boot stacks for secondary harts (abandoned once thread_start switches to the
+// first thread, just like stack_top in boot.S).
+static _Alignas(16) unsigned char secondary_stacks[CPU_MAX][4096];
+
+// Number of secondary harts that have finished per-hart setup.
+static int harts_online;
+
 // First kernel thread: runs once the scheduler and idle thread exist, so
 // fs_init and disk-backed proc_spawn can sleep on VirtIO DMA interrupts.
 static void kernel_init(unsigned long arg) {
@@ -55,6 +65,28 @@ static void kernel_init(unsigned long arg) {
     thread_exit(0);
 }
 
+// Called from _start_secondary in boot.S on each secondary hart.
+void kernel_secondary(unsigned long hartid) {
+    cpu_init(hartid);
+    vm_switch(0);
+
+    plic_init_hart();
+    plic_enable(uart_irq());
+
+    if (virtio_blk_sectors() > 0) {
+        plic_enable(virtio_blk_irq());
+    }
+
+    timer_init_hart();
+    thread_init_hart();
+
+    kprintf("Hart %x online\n", hartid);
+    __atomic_add_fetch(&harts_online, 1, __ATOMIC_RELEASE);
+
+    // Does not return.
+    thread_start();
+}
+
 // Called from _start in boot.S with the arguments OpenSBI passed in a0 and a1.
 // Interrupts stay globally off (sstatus.SIE = 0) until the first thread runs.
 void kernel_main(unsigned long hartid, unsigned long dtb) {
@@ -72,6 +104,7 @@ void kernel_main(unsigned long hartid, unsigned long dtb) {
         panic("invalid device tree");
     }
 
+    kprintf("CPUs: %x\n", (unsigned long)info.hart_count);
     kprintf("RAM: %x + %x\n", info.ram_base, info.ram_size);
     kprintf("UART: %x (irq %x)\n", info.uart.base,
             (unsigned long)info.uart.irq);
@@ -121,6 +154,32 @@ void kernel_main(unsigned long hartid, unsigned long dtb) {
 
     bcache_init();
     timer_init(info.timebase_freq);
+
+    // Start every other hart found in the device tree and wait for them to
+    // finish per-hart setup (including idle thread allocation) before starting
+    // kernel_init and the shell.
+    int started = 0;
+
+    for (int i = 0; i < info.hart_count; i++) {
+        unsigned long h = info.harts[i];
+
+        if (h == hartid || h >= CPU_MAX) {
+            continue;
+        }
+
+        unsigned long stack_top =
+            (unsigned long)(secondary_stacks[h] + sizeof(secondary_stacks[h]));
+
+        if (sbi_hart_start(h, (unsigned long)_start_secondary, stack_top) !=
+            0) {
+            panic("cannot start secondary hart");
+        }
+
+        started++;
+    }
+
+    while (__atomic_load_n(&harts_online, __ATOMIC_ACQUIRE) < started) {
+    }
 
     int init = thread_create(kernel_init, 0, 0);
 

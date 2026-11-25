@@ -22,7 +22,12 @@ int thread_create(void (*entry)(unsigned long), unsigned long arg,
 // Mark a newly created thread runnable so any hart can schedule it.
 void thread_ready(int id);
 
-// Create this hart's idle thread and enter the scheduler. Does not return.
+// Create this hart's idle thread. Called automatically by thread_start() if
+// not called earlier.
+void thread_init_hart(void);
+
+// Enter the scheduler on this hart (creating its idle thread if needed).
+// Does not return.
 void thread_start(void);
 
 // Switch to the next runnable thread, round robin. Returns when this thread

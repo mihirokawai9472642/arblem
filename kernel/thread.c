@@ -209,8 +209,7 @@ static int thread_pick_next(int start) {
     return cpu_current()->idle;
 }
 
-void thread_start(void) {
-    unsigned long unused;
+void thread_init_hart(void) {
     int idle = thread_create(thread_idle, 0, 0);
 
     if (idle < 0) {
@@ -218,13 +217,22 @@ void thread_start(void) {
     }
 
     spinlock_acquire(&sched_lock);
-
-    struct cpu *c = cpu_current();
-
     thread_table[idle].is_idle = 1;
     thread_table[idle].state = THREAD_RUNNABLE;
-    c->idle = idle;
+    cpu_current()->idle = idle;
+    spinlock_release(&sched_lock);
+}
 
+void thread_start(void) {
+    unsigned long unused;
+
+    if (cpu_current()->idle < 0) {
+        thread_init_hart();
+    }
+
+    spinlock_acquire(&sched_lock);
+
+    struct cpu *c = cpu_current();
     int next = thread_pick_next(THREAD_MAX - 1);
 
     thread_table[next].state = THREAD_RUNNING;

@@ -7,6 +7,7 @@
 
 .section .text.boot
 .global _start
+.global _start_secondary
 
 _start:
     la sp, stack_top
@@ -32,6 +33,25 @@ _start:
     call kernel_main
 
     // kernel_main never returns, but stop the hart if it ever does.
+1:
+    wfi
+    j 1b
+
+// Secondary hart entry point, started via SBI HSM sbi_hart_start().
+// OpenSBI jumps here in S-mode with paging off, a0 = hart ID, and a1 = the
+// opaque argument (top of this hart's boot stack).
+_start_secondary:
+    mv sp, a1
+
+    // Send every trap to trap_entry, and mark the hart as being in S-mode
+    // (sscratch = 0) for the trap entry code.
+    la t0, trap_entry
+    csrw stvec, t0
+    csrw sscratch, zero
+
+    // a0 still holds the hart ID from OpenSBI.
+    call kernel_secondary
+
 1:
     wfi
     j 1b

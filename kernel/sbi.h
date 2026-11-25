@@ -14,3 +14,8 @@ void sbi_shutdown(unsigned long reason);
 // Write len bytes from buf (a kernel address) to the firmware's console.
 // Returns 0, or a negative SBI error code.
 long sbi_console_write(const char *buf, unsigned long len);
+
+// Start another hart in S-mode at physical address start_addr with paging off,
+// a0 = hartid, and a1 = opaque (SBI HSM extension). Returns 0 on success.
+long sbi_hart_start(unsigned long hartid, unsigned long start_addr,
+                    unsigned long opaque);
