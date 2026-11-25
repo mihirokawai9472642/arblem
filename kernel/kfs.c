@@ -5,9 +5,11 @@
 #include "bcache.h"
 #include "error.h"
 #include "file.h"
+#include "sleeplock.h"
 #include "str.h"
 #include "vm.h"
 
+static struct sleeplock fs_lock = SLEEPLOCK_INIT("fs");
 static struct fs_super fs_sb;
 static int fs_ready;
 
@@ -264,7 +266,8 @@ static int fs_bmap(struct fs_dinode *ino, unsigned int idx, int alloc,
     return 0;
 }
 
-int fs_stat(unsigned int inum, unsigned short *type, unsigned int *size) {
+static int fs_stat_locked(unsigned int inum, unsigned short *type,
+                          unsigned int *size) {
     if (!fs_ready) {
         return -ERR_IO;
     }
@@ -291,7 +294,7 @@ int fs_stat(unsigned int inum, unsigned short *type, unsigned int *size) {
     return 0;
 }
 
-int fs_trunc(unsigned int inum) {
+static int fs_trunc_locked(unsigned int inum) {
     if (!fs_ready) {
         return -ERR_IO;
     }
@@ -337,7 +340,8 @@ int fs_trunc(unsigned int inum) {
     return fs_inode_write(inum, &ino);
 }
 
-long fs_read(unsigned int inum, unsigned int off, void *dst, unsigned int len) {
+static long fs_read_locked(unsigned int inum, unsigned int off, void *dst,
+                           unsigned int len) {
     if (!fs_ready) {
         return -ERR_IO;
     }
@@ -401,8 +405,8 @@ long fs_read(unsigned int inum, unsigned int off, void *dst, unsigned int len) {
     return (long)done;
 }
 
-long fs_write(unsigned int inum, unsigned int off, const void *src,
-              unsigned int len) {
+static long fs_write_locked(unsigned int inum, unsigned int off,
+                            const void *src, unsigned int len) {
     if (!fs_ready) {
         return -ERR_IO;
     }
@@ -544,7 +548,7 @@ static int fs_dir_lookup(unsigned int dir_inum, const char *name,
          off += sizeof(de)) {
         fs_zero(&de, sizeof(de));
 
-        long n = fs_read(dir_inum, off, &de, sizeof(de));
+        long n = fs_read_locked(dir_inum, off, &de, sizeof(de));
 
         if (n < 0) {
             return (int)n;
@@ -566,7 +570,7 @@ static int fs_dir_lookup(unsigned int dir_inum, const char *name,
     return -ERR_NOENT;
 }
 
-int fs_lookup(const char *path) {
+static int fs_lookup_locked(const char *path) {
     if (!fs_ready) {
         return -ERR_IO;
     }
@@ -632,7 +636,7 @@ static int fs_ialloc(unsigned short type, unsigned int *out_inum) {
 }
 
 static int fs_ifree(unsigned int inum) {
-    int err = fs_trunc(inum);
+    int err = fs_trunc_locked(inum);
 
     if (err < 0) {
         return err;
@@ -667,7 +671,7 @@ static int fs_dir_add(unsigned int dir_inum, const char *name,
          off += sizeof(de)) {
         fs_zero(&de, sizeof(de));
 
-        long n = fs_read(dir_inum, off, &de, sizeof(de));
+        long n = fs_read_locked(dir_inum, off, &de, sizeof(de));
 
         if (n < 0) {
             return (int)n;
@@ -687,7 +691,7 @@ static int fs_dir_add(unsigned int dir_inum, const char *name,
     de.inum = child_inum;
     fs_copy(de.name, name, str_len(name));
 
-    long w = fs_write(dir_inum, slot_off, &de, sizeof(de));
+    long w = fs_write_locked(dir_inum, slot_off, &de, sizeof(de));
 
     if (w < 0) {
         return (int)w;
@@ -712,7 +716,7 @@ static int fs_dir_empty(unsigned int dir_inum) {
          off += sizeof(de)) {
         fs_zero(&de, sizeof(de));
 
-        long n = fs_read(dir_inum, off, &de, sizeof(de));
+        long n = fs_read_locked(dir_inum, off, &de, sizeof(de));
 
         if (n < 0) {
             return (int)n;
@@ -760,7 +764,7 @@ static int fs_lookup_parent(const char *path, unsigned int *out_parent,
 
         if (r == 0) {
             unsigned short type = 0;
-            int err = fs_stat(cur, &type, 0);
+            int err = fs_stat_locked(cur, &type, 0);
 
             if (err < 0) {
                 return err;
@@ -787,7 +791,7 @@ static int fs_lookup_parent(const char *path, unsigned int *out_parent,
     }
 }
 
-int fs_create(const char *path, unsigned short type) {
+static int fs_create_locked(const char *path, unsigned short type) {
     if (!fs_ready) {
         return -ERR_IO;
     }
@@ -851,7 +855,7 @@ int fs_create(const char *path, unsigned short type) {
     return (int)inum;
 }
 
-int fs_unlink(const char *path) {
+static int fs_unlink_locked(const char *path) {
     if (!fs_ready) {
         return -ERR_IO;
     }
@@ -877,7 +881,7 @@ int fs_unlink(const char *path) {
 
     unsigned short type = 0;
 
-    err = fs_stat((unsigned int)child, &type, 0);
+    err = fs_stat_locked((unsigned int)child, &type, 0);
 
     if (err < 0) {
         return err;
@@ -899,7 +903,7 @@ int fs_unlink(const char *path) {
 
     fs_zero(&empty_de, sizeof(empty_de));
 
-    long w = fs_write(parent, entry_off, &empty_de, sizeof(empty_de));
+    long w = fs_write_locked(parent, entry_off, &empty_de, sizeof(empty_de));
 
     if (w < 0) {
         return (int)w;
@@ -921,7 +925,8 @@ struct fs_file {
 
 static struct fs_file fs_files[FS_OPEN_MAX];
 
-static long fs_file_read(struct file *f, unsigned long buf, unsigned long len) {
+static long fs_file_read_locked(struct file *f, unsigned long buf,
+                                unsigned long len) {
     struct fs_file *ff = f->priv;
     unsigned char kbuf[FS_IO_CHUNK];
     unsigned long done = 0;
@@ -933,7 +938,7 @@ static long fs_file_read(struct file *f, unsigned long buf, unsigned long len) {
             n = FS_IO_CHUNK;
         }
 
-        long r = fs_read(ff->inum, ff->off, kbuf, (unsigned int)n);
+        long r = fs_read_locked(ff->inum, ff->off, kbuf, (unsigned int)n);
 
         if (r < 0) {
             return done > 0 ? (long)done : r;
@@ -958,8 +963,8 @@ static long fs_file_read(struct file *f, unsigned long buf, unsigned long len) {
     return (long)done;
 }
 
-static long fs_file_write(struct file *f, unsigned long buf,
-                          unsigned long len) {
+static long fs_file_write_locked(struct file *f, unsigned long buf,
+                                 unsigned long len) {
     struct fs_file *ff = f->priv;
     unsigned char kbuf[FS_IO_CHUNK];
     unsigned long done = 0;
@@ -975,7 +980,7 @@ static long fs_file_write(struct file *f, unsigned long buf,
             return -ERR_FAULT;
         }
 
-        long w = fs_write(ff->inum, ff->off, kbuf, (unsigned int)n);
+        long w = fs_write_locked(ff->inum, ff->off, kbuf, (unsigned int)n);
 
         if (w < 0) {
             return done > 0 ? (long)done : w;
@@ -992,15 +997,35 @@ static long fs_file_write(struct file *f, unsigned long buf,
     return (long)done;
 }
 
+static long fs_file_read(struct file *f, unsigned long buf, unsigned long len) {
+    sleeplock_acquire(&fs_lock);
+    long r = fs_file_read_locked(f, buf, len);
+    sleeplock_release(&fs_lock);
+
+    return r;
+}
+
+static long fs_file_write(struct file *f, unsigned long buf,
+                          unsigned long len) {
+    sleeplock_acquire(&fs_lock);
+    long w = fs_file_write_locked(f, buf, len);
+    sleeplock_release(&fs_lock);
+
+    return w;
+}
+
 static void fs_file_close(struct file *f) {
     struct fs_file *ff = f->priv;
 
+    sleeplock_acquire(&fs_lock);
     ff->in_use = 0;
     ff->inum = 0;
     ff->off = 0;
+    sleeplock_release(&fs_lock);
 }
 
-int fs_open(const char *path, unsigned int flags, struct file **out) {
+static int fs_open_locked(const char *path, unsigned int flags,
+                          struct file **out) {
     if (!fs_ready) {
         return -ERR_IO;
     }
@@ -1024,10 +1049,10 @@ int fs_open(const char *path, unsigned int flags, struct file **out) {
         return -ERR_INVAL;
     }
 
-    int inum = fs_lookup(path);
+    int inum = fs_lookup_locked(path);
 
     if (inum == -ERR_NOENT && (flags & O_CREAT) != 0) {
-        inum = fs_create(path, FS_TYPE_FILE);
+        inum = fs_create_locked(path, FS_TYPE_FILE);
     }
 
     if (inum < 0) {
@@ -1035,7 +1060,7 @@ int fs_open(const char *path, unsigned int flags, struct file **out) {
     }
 
     unsigned short type = 0;
-    int err = fs_stat((unsigned int)inum, &type, 0);
+    int err = fs_stat_locked((unsigned int)inum, &type, 0);
 
     if (err < 0) {
         return err;
@@ -1059,7 +1084,7 @@ int fs_open(const char *path, unsigned int flags, struct file **out) {
     }
 
     if ((flags & O_TRUNC) != 0) {
-        err = fs_trunc((unsigned int)inum);
+        err = fs_trunc_locked((unsigned int)inum);
 
         if (err < 0) {
             return err;
@@ -1078,4 +1103,69 @@ int fs_open(const char *path, unsigned int flags, struct file **out) {
     *out = &ff->file;
 
     return 0;
+}
+
+int fs_stat(unsigned int inum, unsigned short *type, unsigned int *size) {
+    sleeplock_acquire(&fs_lock);
+    int err = fs_stat_locked(inum, type, size);
+    sleeplock_release(&fs_lock);
+
+    return err;
+}
+
+int fs_trunc(unsigned int inum) {
+    sleeplock_acquire(&fs_lock);
+    int err = fs_trunc_locked(inum);
+    sleeplock_release(&fs_lock);
+
+    return err;
+}
+
+long fs_read(unsigned int inum, unsigned int off, void *dst, unsigned int len) {
+    sleeplock_acquire(&fs_lock);
+    long r = fs_read_locked(inum, off, dst, len);
+    sleeplock_release(&fs_lock);
+
+    return r;
+}
+
+long fs_write(unsigned int inum, unsigned int off, const void *src,
+              unsigned int len) {
+    sleeplock_acquire(&fs_lock);
+    long w = fs_write_locked(inum, off, src, len);
+    sleeplock_release(&fs_lock);
+
+    return w;
+}
+
+int fs_lookup(const char *path) {
+    sleeplock_acquire(&fs_lock);
+    int r = fs_lookup_locked(path);
+    sleeplock_release(&fs_lock);
+
+    return r;
+}
+
+int fs_create(const char *path, unsigned short type) {
+    sleeplock_acquire(&fs_lock);
+    int r = fs_create_locked(path, type);
+    sleeplock_release(&fs_lock);
+
+    return r;
+}
+
+int fs_unlink(const char *path) {
+    sleeplock_acquire(&fs_lock);
+    int r = fs_unlink_locked(path);
+    sleeplock_release(&fs_lock);
+
+    return r;
+}
+
+int fs_open(const char *path, unsigned int flags, struct file **out) {
+    sleeplock_acquire(&fs_lock);
+    int err = fs_open_locked(path, flags, out);
+    sleeplock_release(&fs_lock);
+
+    return err;
 }

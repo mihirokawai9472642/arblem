@@ -3,8 +3,12 @@
 
 #include "kprintf.h"
 #include "sbi.h"
+#include "spinlock.h"
 
 #define KPRINTF_BUF_SIZE 64
+
+static struct spinlock kprintf_lock = SPINLOCK_INIT("kprintf");
+static int kprintf_use_lock = 1;
 
 // Output is collected here and sent to SBI in chunks, to make fewer calls.
 struct kprintf_buf {
@@ -41,7 +45,17 @@ static void puthex(struct kprintf_buf *b, unsigned long x) {
     }
 }
 
+void kprintf_disable_lock(void) {
+    __atomic_store_n(&kprintf_use_lock, 0, __ATOMIC_RELEASE);
+}
+
 void kprintf(const char *f, ...) {
+    int locking = __atomic_load_n(&kprintf_use_lock, __ATOMIC_ACQUIRE);
+
+    if (locking) {
+        spinlock_acquire(&kprintf_lock);
+    }
+
     struct kprintf_buf b;
     __builtin_va_list ap;
 
@@ -64,4 +78,8 @@ void kprintf(const char *f, ...) {
     __builtin_va_end(ap);
 
     kprintf_flush(&b);
+
+    if (locking) {
+        spinlock_release(&kprintf_lock);
+    }
 }
