@@ -10,6 +10,7 @@
 
 #ifndef __ASSEMBLER__
 struct file;
+struct spinlock;
 
 // Create a thread in THREAD_INIT state that will run entry(arg) on its own
 // kernel stack, using the page table vm (0 = the kernel's). It inherits the
@@ -21,15 +22,16 @@ int thread_create(void (*entry)(unsigned long), unsigned long arg,
 // Mark a newly created thread runnable so any hart can schedule it.
 void thread_ready(int id);
 
-// Create the idle thread and start running thread 0. Does not return.
+// Create this hart's idle thread and enter the scheduler. Does not return.
 void thread_start(void);
 
 // Switch to the next runnable thread, round robin. Returns when this thread
 // is scheduled again.
 void thread_yield(void);
 
-// Block until thread_wakeup(chan). chan is any address, used as a name.
-void thread_sleep(void *chan);
+// Atomically release lk and block until thread_wakeup(chan), then re-acquire
+// lk before returning. Caller must hold lk.
+void thread_sleep(void *chan, struct spinlock *lk);
 
 // Make every thread sleeping on chan runnable.
 void thread_wakeup(void *chan);

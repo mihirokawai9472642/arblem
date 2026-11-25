@@ -4,6 +4,7 @@
 #include "virtio_blk.h"
 #include "error.h"
 #include "fdt.h"
+#include "spinlock.h"
 #include "thread.h"
 
 // VirtIO MMIO v2 register offsets (all 32-bit little-endian).
@@ -104,6 +105,7 @@ static _Alignas(4) struct virtq_used blk_used;
 static struct virtio_blk_req blk_req;
 static unsigned char blk_status;
 
+static struct spinlock blk_lock = SPINLOCK_INIT("virtio_blk");
 static unsigned long blk_base;
 static unsigned int blk_irq_num;
 static unsigned long blk_sectors;
@@ -241,10 +243,12 @@ static int virtio_blk_rw(unsigned long sector, unsigned long buf_pa,
         return -ERR_IO;
     }
 
+    spinlock_acquire(&blk_lock);
+
     // Serialize requests so descriptors 0..2 and blk_req stay exclusive
     // while a thread sleeps waiting for DMA completion.
     while (blk_busy) {
-        thread_sleep(&blk_busy_wait);
+        thread_sleep(&blk_busy_wait, &blk_lock);
     }
 
     blk_busy = 1;
@@ -284,7 +288,7 @@ static int virtio_blk_rw(unsigned long sector, unsigned long buf_pa,
 
     // Sleep until the device advances the used ring.
     while (blk_used_idx == ((volatile struct virtq_used *)&blk_used)->idx) {
-        thread_sleep(&blk_done_wait);
+        thread_sleep(&blk_done_wait, &blk_lock);
     }
 
     // Ensure DMA writes to buf and blk_status are visible after used.idx.
@@ -295,6 +299,7 @@ static int virtio_blk_rw(unsigned long sector, unsigned long buf_pa,
 
     blk_busy = 0;
     thread_wakeup(&blk_busy_wait);
+    spinlock_release(&blk_lock);
 
     return status == VIRTIO_BLK_S_OK ? 0 : -ERR_IO;
 }
@@ -312,9 +317,13 @@ void virtio_blk_interrupt(void) {
         return;
     }
 
+    spinlock_acquire(&blk_lock);
+
     // Acknowledge the level-triggered VirtIO interrupt before plic_complete.
     unsigned int isr = mmio_read(blk_base, VIRTIO_MMIO_INTERRUPT_STATUS);
 
     mmio_write(blk_base, VIRTIO_MMIO_INTERRUPT_ACK, isr);
     thread_wakeup(&blk_done_wait);
+
+    spinlock_release(&blk_lock);
 }

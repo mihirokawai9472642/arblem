@@ -283,8 +283,12 @@ void thread_yield(void) {
     spinlock_release(&sched_lock);
 }
 
-void thread_sleep(void *chan) {
+void thread_sleep(void *chan, struct spinlock *lk) {
+    // Acquire sched_lock before releasing lk so a concurrent thread_wakeup
+    // (which acquires sched_lock) cannot slip in between the caller's condition
+    // check and this thread entering THREAD_SLEEPING.
     spinlock_acquire(&sched_lock);
+    spinlock_release(lk);
 
     struct thread *t = &thread_table[cpu_current()->current];
 
@@ -294,6 +298,7 @@ void thread_sleep(void *chan) {
     t->chan = 0;
 
     spinlock_release(&sched_lock);
+    spinlock_acquire(lk);
 }
 
 static void thread_wakeup_locked(void *chan) {
