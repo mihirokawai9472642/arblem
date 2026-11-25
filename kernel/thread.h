@@ -10,22 +10,33 @@
 
 #ifndef __ASSEMBLER__
 struct file;
+struct spinlock;
 
-// Create a thread that will run entry(arg) on its own kernel stack, using the
-// page table vm (0 = the kernel's). It inherits the current thread's files.
+// Create a thread in THREAD_INIT state that will run entry(arg) on its own
+// kernel stack, using the page table vm (0 = the kernel's). It inherits the
+// current thread's files. Call thread_ready() once setup is complete.
 // Returns the thread ID, or -ERR_AGAIN or -ERR_NOMEM.
 int thread_create(void (*entry)(unsigned long), unsigned long arg,
                   unsigned long *vm);
 
-// Create the idle thread and start running thread 0. Does not return.
+// Mark a newly created thread runnable so any hart can schedule it.
+void thread_ready(int id);
+
+// Create this hart's idle thread. Called automatically by thread_start() if
+// not called earlier.
+void thread_init_hart(void);
+
+// Enter the scheduler on this hart (creating its idle thread if needed).
+// Does not return.
 void thread_start(void);
 
 // Switch to the next runnable thread, round robin. Returns when this thread
 // is scheduled again.
 void thread_yield(void);
 
-// Block until thread_wakeup(chan). chan is any address, used as a name.
-void thread_sleep(void *chan);
+// Atomically release lk and block until thread_wakeup(chan), then re-acquire
+// lk before returning. Caller must hold lk.
+void thread_sleep(void *chan, struct spinlock *lk);
 
 // Make every thread sleeping on chan runnable.
 void thread_wakeup(void *chan);
@@ -41,9 +52,6 @@ int thread_wait(unsigned long id, int *code);
 
 // The current thread's file for fd, or 0 if fd is out of range or unused.
 struct file *thread_file(unsigned long fd);
-
-// Install file f as fd in thread id. fd must be below THREAD_FILE_MAX.
-void thread_set_file(int id, unsigned long fd, struct file *f);
 
 // Install file f in the lowest free fd of the current thread. Returns the
 // fd, or -ERR_MFILE if the table is full.

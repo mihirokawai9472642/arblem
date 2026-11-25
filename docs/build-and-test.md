@@ -61,10 +61,10 @@ or spawn the matching Zed task (`build` for the default target):
 | `tidy`   | Run `clang-tidy` on all C sources using `build/compile_commands.json`               |
 | `clean`  | Delete `build/`                                                                     |
 
-`make run` and `make debug` attach `build/disk.img` using `-global
-virtio-mmio.force-legacy=false` for Modern VirtIO MMIO v2. `make test`
-recreates a separate `build/test.img` on every run so automated tests do not
-dirty `build/disk.img`.
+`make run` and `make debug` boot QEMU with `-smp 2` (two harts) and attach
+`build/disk.img` using `-global virtio-mmio.force-legacy=false` for Modern VirtIO
+MMIO v2. `make test` recreates a separate `build/test.img` on every run so
+automated tests do not dirty `build/disk.img`.
 
 ## Formatting and static analysis
 
@@ -89,10 +89,10 @@ The smoke test boots the real kernel in QEMU and types into the shell:
 3. Types `pages`, `hello`, `pages`, `orphan` seven times, `regcheck`,
    `pipecheck`, `pages`, `hello | upper`, `pages`, `echo arg1 arg2 | upper`,
    `pages`, `memcheck`, `pages`, `blkcheck`, `pages`, `fscheck`, `pages`,
-   `cat /persist`, `ls`, `pages`, `count`, `pages`, `fault`, `pages`, `foo`,
-   `pages`, `poweroff`, each ending in `\r` as a terminal would send it. `count`
-   takes about a second, which gives the orphans' children time to finish and be
-   freed before the next `pages`.
+   `cat /persist`, `ls`, `pages`, `smpcheck`, `pages`, `count`, `pages`,
+   `fault`, `pages`, `foo`, `pages`, `poweroff`, each ending in `\r` as a
+   terminal would send it. `count` takes about a second, which gives the
+   orphans' children time to finish and be freed before the next `pages`.
 4. Waits for QEMU to exit.
 
 It then checks the log and disk image:
@@ -100,6 +100,7 @@ It then checks the log and disk image:
 | Check         | Passes when                                              |
 |---------------|----------------------------------------------------------|
 | `boot`        | The kernel banner appears                                |
+| `smp_boot`    | Secondary hart 1 reports `Hart 0x0000000000000001 online` |
 | `hello`       | `hello` printed its message                              |
 | `count`       | `count` reached `count: 4`                               |
 | `fault`       | The shell printed `exit: -1` for `fault`                 |
@@ -113,10 +114,11 @@ It then checks the log and disk image:
 | `fs`          | `fscheck` printed `fs: ok`: file R/W, `O_TRUNC`, multi-block I/O, directories, and `unlink` pass |
 | `cat`         | `cat /persist` printed `ARBLEM-FS-OK`                    |
 | `ls`          | `ls` listed `persist` in `/`                             |
+| `smp`         | `smpcheck` printed `smp: ok`: parallel memory, FS, pipe, `tp`, and tick checks pass across harts |
 | `blk_persist` | `ARBLEM-BLK-OK` persisted in `build/test.img` after QEMU exited |
 | `fs_persist`  | `ARBLEM-FS-OK` persisted in `build/test.img` after QEMU exited |
 | `orphan`      | `hello` ran 8 times: once alone, and once from each `orphan`, so orphans are freed and the thread table never fills up |
-| `pages`       | All twelve `pages` outputs are identical, so nothing leaked |
+| `pages`       | All thirteen `pages` outputs are identical, so nothing leaked |
 | `poweroff`    | QEMU exited with status 0                                |
 
 The test fails at once if the log contains `panic: `, or if an expected line

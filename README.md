@@ -25,16 +25,17 @@ exit: -1
 
 ## Features
 
-- S-mode kernel on OpenSBI, using SBI for kernel messages and shutdown
-- Device tree (DTB) parsing (`kernel/fdt.c`) for RAM, timer frequency, and MMIO device discovery
+- S-mode kernel on OpenSBI, using SBI for kernel messages, secondary hart startup (HSM), and shutdown
+- Multi-hart SMP (`-smp 2`), with per-hart `struct cpu`, atomic spinlocks, sleeplocks, and lost-wakeup-free sleep/wakeup
+- Device tree (DTB) parsing (`kernel/fdt.c`) for CPUs, RAM, timer frequency, and MMIO device discovery
 - Sv39 paging, with a separate address space per program, W^X mappings, and demand-paged heap and stack (up to 64 KiB with a guard page)
-- Preemptive round-robin threads, driven by a 100 Hz timer
+- Preemptive round-robin threads across harts, driven by per-hart 100 Hz timers
 - Interrupt-driven UART input and Modern VirtIO-blk (MMIO v2) disk I/O with DMA through the PLIC
 - 4 KiB LRU block cache (`kernel/bcache.c`) and simple block filesystem (`kernel/kfs.c`, `tools/mkfs.c`)
 - User programs loaded from ELF files on the VirtIO-blk filesystem, with `argc`/`argv` argument passing
 - System calls: `read`, `write`, `open`, `close`, `dup`, `pipe`, `unlink`, `mkdir`, `exit`, `spawn`, `wait`, `ticks`, `pages`, `sbrk`, `blk_read`, `blk_write`, `poweroff`
 - Per-process reference-counted file descriptors for the console, pipes, and filesystem files/directories
-- A smoke test that boots the system in QEMU and checks the shell's output and disk persistence
+- A smoke test that boots two harts in QEMU and checks parallel SMP execution, shell output, and disk persistence
 
 ## Getting started
 
@@ -108,6 +109,7 @@ and SSH are not available in the container.
 | `rm`           | Remove files or empty directories                    |
 | `mkdir`        | Create directories                                   |
 | `fscheck`      | Check filesystem R/W, directories, and persistence   |
+| `smpcheck`     | Stress-test parallel execution across harts          |
 | `cmd1 \| cmd2` | Connect `cmd1`'s stdout to `cmd2`'s stdin with a pipe |
 
 ## Layout

@@ -3,6 +3,7 @@
 // Minimal Flattened Device Tree (FDT / DTB) parser for QEMU virt.
 
 #define FDT_VIRTIO_MAX 8
+#define FDT_HART_MAX   8
 
 struct fdt_mmio {
     unsigned long base;
@@ -15,6 +16,8 @@ struct fdt_info {
     unsigned long ram_size;
     unsigned long dtb_size;
     unsigned long timebase_freq;
+    unsigned long harts[FDT_HART_MAX];
+    int hart_count;
     struct fdt_mmio plic;
     struct fdt_mmio uart;
     struct fdt_mmio virtio[FDT_VIRTIO_MAX];

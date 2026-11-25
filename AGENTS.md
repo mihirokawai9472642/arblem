@@ -22,9 +22,10 @@ project's shared headers in `inc/` are available.
 - `tools/`: host build utilities (`tools/mkfs.c` builds filesystem images).
 - `test/`: smoke test (`test/smoke.sh`) run by `make test`.
 - `docs/`: design documentation; start from `docs/README.md` and
-  `docs/architecture.md` (which states the kernel-wide design rules: single
-  hart, interrupts off in the kernel, identity-mapped kernel memory, user
-  memory in one 1 GiB slot, W^X, and negative `-ERR_*` error codes).
+  `docs/architecture.md` (which states the kernel-wide design rules: multi-hart
+  SMP with spinlocks and sleeplocks, interrupts off in the kernel,
+  identity-mapped kernel memory, user memory in one 1 GiB slot, W^X, and
+  negative `-ERR_*` error codes).
 - `build/`: everything generated (`kernel.elf`, user ELFs, `mkfs`, `disk.img`,
   `compile_commands.json`, test logs); not in git.
 
@@ -80,9 +81,9 @@ available there.
 - `make tidy` reports no warnings in the project's own files (warnings it
   suppresses in system headers, or explicitly justified `NOLINT` annotations
   such as the intentional page fault in `user/fault.c`, do not count).
-- `make test` passes every check (`boot`, `hello`, `count`, `fault`, `unknown`,
-  `regs`, `pipe`, `pipeline`, `args`, `mem`, `blk`, `fs`, `cat`, `ls`,
-  `blk_persist`, `fs_persist`, `orphan`, `pages`, `poweroff`).
+- `make test` passes every check (`boot`, `smp_boot`, `hello`, `count`, `fault`,
+  `unknown`, `regs`, `pipe`, `pipeline`, `args`, `mem`, `blk`, `fs`, `cat`,
+  `ls`, `smp`, `blk_persist`, `fs_persist`, `orphan`, `pages`, `poweroff`).
 
 ## Git workflow
 

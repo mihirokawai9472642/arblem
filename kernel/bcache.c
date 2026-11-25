@@ -4,11 +4,14 @@
 
 #include "bcache.h"
 #include "panic.h"
+#include "spinlock.h"
 #include "thread.h"
 #include "virtio_blk.h"
 
 #define BCACHE_COUNT             16
 #define BCACHE_SECTORS_PER_BLOCK (BCACHE_BLOCK_SIZE / VIRTIO_BLK_SECTOR_SIZE)
+
+static struct spinlock bcache_lock = SPINLOCK_INIT("bcache");
 
 // Static pool of cache buffers in .bss (identity-mapped, so b->data is safe
 // for VirtIO DMA).
@@ -61,16 +64,20 @@ static int bcache_read_block(struct bcache_buf *b) {
 }
 
 struct bcache_buf *bcache_get(unsigned int blockno) {
+    spinlock_acquire(&bcache_lock);
+
     for (;;) {
         struct bcache_buf *b = bcache_find(blockno);
 
         if (b != 0) {
             if (b->busy) {
-                thread_sleep(&bcache_wait);
+                thread_sleep(&bcache_wait, &bcache_lock);
                 continue;
             }
 
             b->ref++;
+            spinlock_release(&bcache_lock);
+
             return b;
         }
 
@@ -82,7 +89,12 @@ struct bcache_buf *bcache_get(unsigned int blockno) {
                 b->busy = 1;
                 b->ref = 1;
 
+                // Release bcache_lock during disk I/O because virtio_blk_read
+                // sleeps. b->busy = 1 prevents other threads from reusing or
+                // reading this buffer before the read completes.
+                spinlock_release(&bcache_lock);
                 int err = bcache_read_block(b);
+                spinlock_acquire(&bcache_lock);
 
                 b->busy = 0;
 
@@ -93,10 +105,13 @@ struct bcache_buf *bcache_get(unsigned int blockno) {
                 }
 
                 thread_wakeup(&bcache_wait);
+                spinlock_release(&bcache_lock);
 
                 return err == 0 ? b : 0;
             }
         }
+
+        spinlock_release(&bcache_lock);
 
         return 0;
     }
@@ -118,7 +133,10 @@ int bcache_write(struct bcache_buf *b) {
 }
 
 void bcache_put(struct bcache_buf *b) {
+    spinlock_acquire(&bcache_lock);
+
     if (b->ref <= 0) {
+        spinlock_release(&bcache_lock);
         panic("bcache_put: refcount underflow");
     }
 
@@ -134,4 +152,6 @@ void bcache_put(struct bcache_buf *b) {
         bcache_head.next->prev = b;
         bcache_head.next = b;
     }
+
+    spinlock_release(&bcache_lock);
 }

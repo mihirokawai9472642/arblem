@@ -12,14 +12,17 @@ and spanning 8 hardware sectors of 512 bytes (`VirtIO-blk`).
 - **Buffer pool**: `bcache_bufs[BCACHE_COUNT]` (16 buffers, 64 KiB total) sits
   in identity-mapped `.bss`, so each buffer's `data` array can be passed
   directly to VirtIO DMA.
-- **LRU list**: Buffers are linked in a circular doubly-linked list with sentinel
-  `bcache_head`. `bcache_get(blockno)` checks for a match first; on a hit it
+- **LRU list and locking**: `bcache_lock` (`struct spinlock`) guards the
+  circular doubly-linked list (`bcache_head`) and buffer metadata (`ref`,
+  `busy`, `valid`). `bcache_get(blockno)` checks for a match first; on a hit it
   increments `ref` and returns the pinned buffer.
 - **Busy synchronization**: On a cache miss, `bcache_get` recycles the least
-  recently used unpinned buffer (`ref == 0`), sets `busy = 1`, and reads 8
-  sectors from disk. Because `virtio_blk_read` sleeps during DMA, other threads
-  looking up the same `blockno` see `busy == 1` and sleep on `&bcache_wait` until
-  the read finishes, preventing duplicate cache entries.
+  recently used unpinned buffer (`ref == 0 && !busy`), sets `busy = 1` and
+  `ref = 1`, releases `bcache_lock` during `bcache_read_block` (because
+  `virtio_blk_read` sleeps on DMA completion), and re-acquires `bcache_lock`
+  afterward. Other threads looking up the same `blockno` sleep with
+  `thread_sleep(&bcache_wait, &bcache_lock)` until the read finishes, preventing
+  duplicate cache entries.
 - **Write-through and release**: `bcache_write(b)` writes all 8 sectors back to
   disk immediately. `bcache_put(b)` decrements `ref` and, when it reaches zero,
   moves the buffer to the MRU end (`bcache_head.next`).
@@ -47,8 +50,16 @@ in `USER_PROGS` with its `.elf` suffix stripped.
 
 ## Kernel filesystem (`kernel/kfs.c`)
 
-`kernel_init` calls `fs_init()` once the scheduler is running so disk reads can
-sleep on VirtIO interrupts. `fs_init()` reads and validates block 1.
+`kernel_init` calls `fs_init()` once the scheduler and all harts are running so
+disk reads can sleep on VirtIO interrupts. `fs_init()` reads and validates
+block 1.
+
+- **Locking (`fs_lock`)**: Public filesystem operations and `fs_files[]`
+  (`fs_open`, `fs_read`, `fs_write`, `fs_create`, `fs_unlink`, `fs_stat`,
+  `fs_trunc`, `fs_lookup`, `fs_file_read`, `fs_file_write`, `fs_file_close`)
+  acquire `fs_lock` (`struct sleeplock` in `kernel/sleeplock.c`), allowing
+  disk I/O to sleep across harts without holding a spinlock. Internal callers
+  invoke `*_locked` helpers directly to avoid self-deadlock.
 
 - **Allocation & I/O**: `fs_balloc`/`fs_bfree` manage free blocks via block 4;
   `fs_bmap` maps logical file block indices through `direct[]` and `indirect`;

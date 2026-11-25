@@ -6,6 +6,7 @@
 // entries directly.
 
 #include "vm.h"
+#include "cpu.h"
 #include "error.h"
 #include "fdt.h"
 #include "page.h"
@@ -27,7 +28,6 @@ extern char __text_end[];
 extern char __rodata_end[];
 
 static unsigned long *vm_kernel_root;
-static unsigned long *vm_current_root;
 
 // Return the address of the level 0 (leaf) PTE for va. Missing level 1 and
 // level 0 tables are allocated if alloc is set; otherwise, or when out of
@@ -172,7 +172,7 @@ void vm_switch(unsigned long *root) {
         root = vm_kernel_root;
     }
 
-    vm_current_root = root;
+    cpu_current()->vm_root = root;
 
     // satp = mode | physical page number of the root table. sfence.vma
     // flushes the TLB entries of the previous page table.
@@ -222,16 +222,18 @@ static int vm_check_user(unsigned long addr, unsigned long len,
         return -1;
     }
 
+    unsigned long *root = cpu_current()->vm_root;
+
     for (unsigned long va = addr & ~(PAGE_SIZE - 1); va < end;
          va += PAGE_SIZE) {
-        unsigned long *pte = vm_walk(vm_current_root, va, 0);
+        unsigned long *pte = vm_walk(root, va, 0);
 
         if (pte == 0 || (*pte & PTE_V) == 0) {
             if (thread_fault(va) != 0) {
                 return -1;
             }
 
-            pte = vm_walk(vm_current_root, va, 0);
+            pte = vm_walk(root, va, 0);
         }
 
         if (pte == 0 ||

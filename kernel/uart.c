@@ -3,6 +3,7 @@
 // interrupt. See docs/devices.md.
 
 #include "uart.h"
+#include "spinlock.h"
 #include "thread.h"
 
 static unsigned long uart_base;
@@ -21,6 +22,7 @@ static unsigned int uart_irq_num;
 // Receive ring buffer capacity (power of two so wrap-around stays aligned).
 #define UART_RX_BUF_SIZE 512
 
+static struct spinlock uart_lock = SPINLOCK_INIT("uart");
 static char uart_rx_buf[UART_RX_BUF_SIZE];
 static unsigned long uart_rx_rpos;
 static unsigned long uart_rx_wpos;
@@ -39,20 +41,26 @@ unsigned int uart_irq(void) {
 }
 
 void uart_putc(char c) {
+    spinlock_acquire(&uart_lock);
+
     while ((*UART_LSR & UART_LSR_THRE) == 0) {
     }
 
     *UART_THR = (unsigned char)c;
+    spinlock_release(&uart_lock);
 }
 
 char uart_getc(void) {
+    spinlock_acquire(&uart_lock);
+
     while (uart_rx_rpos == uart_rx_wpos) {
-        thread_sleep(&uart_rx_wait);
+        thread_sleep(&uart_rx_wait, &uart_lock);
     }
 
     char c = uart_rx_buf[uart_rx_rpos % UART_RX_BUF_SIZE];
 
     uart_rx_rpos++;
+    spinlock_release(&uart_lock);
 
     return c;
 }
@@ -60,6 +68,8 @@ char uart_getc(void) {
 // Drain every waiting byte from RBR so the level-triggered receive interrupt
 // clears even when no thread is reading. Excess bytes are dropped if full.
 void uart_interrupt(void) {
+    spinlock_acquire(&uart_lock);
+
     unsigned long before = uart_rx_wpos;
 
     while ((*UART_LSR & UART_LSR_DR) != 0) {
@@ -74,4 +84,6 @@ void uart_interrupt(void) {
     if (uart_rx_wpos != before) {
         thread_wakeup(&uart_rx_wait);
     }
+
+    spinlock_release(&uart_lock);
 }

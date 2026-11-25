@@ -30,6 +30,7 @@ the ones before it.
 | Area            | Files                                                                     |
 |-----------------|---------------------------------------------------------------------------|
 | Boot            | `kernel/boot.S`, `kernel/kernel.c`, `kernel/linker.ld`                    |
+| SMP / Locks     | `kernel/cpu.h`, `kernel/cpu.c`, `kernel/spinlock.c`, `kernel/sleeplock.c` |
 | Memory          | `kernel/page.c`, `kernel/vm.c`, `kernel/riscv.h`                          |
 | Traps           | `kernel/trap.S`, `kernel/trap.c`                                          |
 | Threads         | `kernel/thread.S`, `kernel/thread.c`                                      |

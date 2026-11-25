@@ -1,9 +1,12 @@
 // Trap entry and exit, and the first entry into U-mode.
 //
-// sscratch convention: while the hart runs in U-mode, sscratch holds the
-// kernel stack pointer of the current thread; while it runs in S-mode,
-// sscratch is 0. See docs/traps.md.
+// sscratch / tp convention:
+//   - In S-mode: tp holds &cpus[hartid] and sscratch is 0.
+//   - In U-mode: tp holds the user program's tp, sscratch holds &cpus[hartid],
+//     and cpus[hartid].kernel_sp holds the current thread's kernel stack top.
+// See docs/traps.md.
 
+#include "cpu.h"
 #include "riscv.h"
 #include "trap.h"
 
@@ -14,20 +17,38 @@
 
 // stvec points here (direct mode), so every trap starts at this instruction.
 trap_entry:
-    // Swap sp and sscratch. From U-mode this loads the kernel stack. From
-    // S-mode it loads 0, so take the original sp back from sscratch.
-    csrrw sp, sscratch, sp
-    bnez sp, 1f
-    csrr sp, sscratch
+    // Swap tp and sscratch. From U-mode, tp becomes &cpus[hartid] (non-zero)
+    // and sscratch holds the user program's tp. From S-mode, tp becomes 0 and
+    // sscratch holds &cpus[hartid].
+    csrrw tp, sscratch, tp
+    bnez tp, 1f
+
+    // Trap from S-mode: restore kernel tp from sscratch and clear sscratch.
+    csrrw tp, sscratch, zero
+    addi sp, sp, -TRAP_FRAME_SIZE
+    sd t0, 8(sp)
+    addi t0, sp, TRAP_FRAME_SIZE
+    sd t0, 128(sp)
+    sd tp, 144(sp)
+    j 2f
 
 1:
-    // Save the caller-saved registers, plus gp and tp, in a trap frame
-    // (struct trap_frame in trap.c). trap_handler is a C function and
-    // preserves s0-s11 itself.
+    // Trap from U-mode: stash user sp in cpu->user_sp, switch to this
+    // thread's kernel stack, and clear sscratch now that we are in S-mode.
+    sd sp, CPU_USER_SP(tp)
+    ld sp, CPU_KERNEL_SP(tp)
     addi sp, sp, -TRAP_FRAME_SIZE
-
-    sd ra, 0(sp)
     sd t0, 8(sp)
+    ld t0, CPU_USER_SP(tp)
+    sd t0, 128(sp)
+    csrrw t0, sscratch, zero
+    sd t0, 144(sp)
+
+2:
+    // Save the remaining caller-saved registers and gp in the trap frame
+    // (struct trap_frame in trap.c). t0 (8), sp (128), and tp (144) are
+    // already saved above. trap_handler is a C function and preserves s0-s11.
+    sd ra, 0(sp)
     sd t1, 16(sp)
     sd t2, 24(sp)
     sd t3, 32(sp)
@@ -42,31 +63,26 @@ trap_entry:
     sd a5, 104(sp)
     sd a6, 112(sp)
     sd a7, 120(sp)
-
-    // gp and tp are neither caller- nor callee-saved: no function touches
-    // them, so they still hold the user program's values. Save them too, or
-    // the next program to run would overwrite them.
     sd gp, 136(sp)
-    sd tp, 144(sp)
-
-    // sscratch now holds the interrupted sp. Save it, and set sscratch to 0
-    // because the hart is in S-mode until the sret below.
-    csrrw t0, sscratch, zero
-    sd t0, 128(sp)
 
     mv a0, sp
     call trap_handler
 
-    // Returning to U-mode (SPP = 0): the next trap from U-mode must find
-    // this thread's kernel stack, which is sp without the frame.
+    // Returning to U-mode (SPP = 0): record this thread's kernel stack in the
+    // current hart's struct cpu (the thread may have migrated to another hart
+    // during trap_handler), stash &cpus[hartid] in sscratch, and restore user
+    // tp. Returning to S-mode (SPP = 1) skips this so tp keeps pointing to the
+    // current physical hart's struct cpu.
     csrr t0, sstatus
     andi t0, t0, SSTATUS_SPP
-    bnez t0, 2f
+    bnez t0, 3f
 
     addi t0, sp, TRAP_FRAME_SIZE
-    csrw sscratch, t0
+    sd t0, CPU_KERNEL_SP(tp)
+    csrw sscratch, tp
+    ld tp, 144(sp)
 
-2:
+3:
     // Restore the frame, possibly modified by trap_handler (a0 holds a
     // system call's return value). sp goes last, since it is the base.
     ld ra, 0(sp)
@@ -86,7 +102,6 @@ trap_entry:
     ld a6, 112(sp)
     ld a7, 120(sp)
     ld gp, 136(sp)
-    ld tp, 144(sp)
     ld sp, 128(sp)
 
     sret
@@ -108,7 +123,8 @@ trap_enter_user:
     csrc sstatus, t0
     csrw sepc, a0
 
-    csrw sscratch, sp
+    sd sp, CPU_KERNEL_SP(tp)
+    csrw sscratch, tp
     mv sp, a1
     mv a0, a2
     mv a1, a3

@@ -53,9 +53,9 @@ thread_switch:
 
 // First code of a new thread. thread_create builds a frame whose ra points
 // here, with s0 = the thread's entry function and s1 = its argument.
-// Interrupts are enabled, so a kernel-only thread (the idle thread) can be
-// preempted.
+// thread_switch arrived here holding sched_lock, so release it before running
+// the thread's entry function.
 thread_entry:
-    csrsi sstatus, SSTATUS_SIE
+    call thread_entry_unlock
     mv a0, s1
     jr s0

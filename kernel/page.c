@@ -3,11 +3,13 @@
 // memory of its own. See docs/memory.md.
 
 #include "page.h"
+#include "spinlock.h"
 
 struct page_node {
     struct page_node *next;
 };
 
+static struct spinlock page_lock = SPINLOCK_INIT("page");
 static struct page_node *page_free_list;
 static unsigned long page_free_pages;
 
@@ -20,17 +22,23 @@ void page_init(unsigned long start, unsigned long end) {
 }
 
 void *page_alloc(void) {
+    spinlock_acquire(&page_lock);
     struct page_node *page = page_free_list;
+
+    if (page != 0) {
+        page_free_list = page->next;
+        page_free_pages--;
+    }
+
+    spinlock_release(&page_lock);
 
     if (page == 0) {
         return 0;
     }
 
-    page_free_list = page->next;
-    page_free_pages--;
-
     // Callers rely on zeroed pages: new page tables start empty, and a new
-    // program's .bss starts as zero.
+    // program's .bss starts as zero. Zero outside the lock because no other
+    // hart can see this page once unlinked.
     unsigned long *words = (unsigned long *)page;
 
     for (unsigned long i = 0; i < PAGE_SIZE / sizeof(unsigned long); i++) {
@@ -44,11 +52,17 @@ void *page_alloc(void) {
 void page_free(void *page) {
     struct page_node *node = page;
 
+    spinlock_acquire(&page_lock);
     node->next = page_free_list;
     page_free_list = node;
     page_free_pages++;
+    spinlock_release(&page_lock);
 }
 
 unsigned long page_free_count(void) {
-    return page_free_pages;
+    spinlock_acquire(&page_lock);
+    unsigned long n = page_free_pages;
+    spinlock_release(&page_lock);
+
+    return n;
 }

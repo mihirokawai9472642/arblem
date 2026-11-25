@@ -5,6 +5,7 @@
 #include "error.h"
 #include "file.h"
 #include "page.h"
+#include "spinlock.h"
 #include "thread.h"
 #include "vm.h"
 
@@ -15,6 +16,7 @@
 #define PIPE_CHUNK 64
 
 struct pipe {
+    struct spinlock lock;
     struct file read_end;
     struct file write_end;
     int read_open;
@@ -35,22 +37,36 @@ static long pipe_read(struct file *f, unsigned long buf, unsigned long len) {
         return 0;
     }
 
+    spinlock_acquire(&p->lock);
+
     // Block while the buffer is empty and a writer can still produce data.
     while (p->rpos == p->wpos && p->write_open) {
-        thread_sleep(&p->read_end);
+        thread_sleep(&p->read_end, &p->lock);
     }
 
     // Buffer is empty and all write ends are closed: EOF.
     if (p->rpos == p->wpos) {
+        spinlock_release(&p->lock);
+
         return 0;
     }
 
-    unsigned long avail = p->wpos - p->rpos;
-    unsigned long want = len < avail ? len : avail;
     unsigned long done = 0;
 
-    while (done < want) {
-        unsigned long n = want - done;
+    for (;;) {
+        unsigned long avail = p->wpos - p->rpos;
+
+        if (avail == 0 || done == len) {
+            spinlock_release(&p->lock);
+
+            return (long)done;
+        }
+
+        unsigned long n = len - done;
+
+        if (n > avail) {
+            n = avail;
+        }
 
         if (n > PIPE_CHUNK) {
             n = PIPE_CHUNK;
@@ -60,21 +76,22 @@ static long pipe_read(struct file *f, unsigned long buf, unsigned long len) {
             kbuf[i] = p->buf[(p->rpos + i) % PIPE_BUF_SIZE];
         }
 
-        if (vm_copy_to_user(buf + done, kbuf, n) != 0) {
-            if (done > 0) {
-                thread_wakeup(&p->write_end);
-            }
+        p->rpos += n;
+        thread_wakeup(&p->write_end);
+        spinlock_release(&p->lock);
 
+        if (vm_copy_to_user(buf + done, kbuf, n) != 0) {
             return -ERR_FAULT;
         }
 
-        p->rpos += n;
         done += n;
+
+        if (done == len) {
+            return (long)done;
+        }
+
+        spinlock_acquire(&p->lock);
     }
-
-    thread_wakeup(&p->write_end);
-
-    return (long)done;
 }
 
 static long pipe_write(struct file *f, unsigned long buf, unsigned long len) {
@@ -83,37 +100,50 @@ static long pipe_write(struct file *f, unsigned long buf, unsigned long len) {
     unsigned long done = 0;
 
     while (done < len) {
-        // Block while the buffer is full and a reader is still attached.
-        while (p->wpos - p->rpos == PIPE_BUF_SIZE && p->read_open) {
-            thread_sleep(&p->write_end);
+        unsigned long chunk = len - done;
+
+        if (chunk > PIPE_CHUNK) {
+            chunk = PIPE_CHUNK;
         }
 
-        if (!p->read_open) {
-            return -ERR_PIPE;
-        }
-
-        unsigned long space = PIPE_BUF_SIZE - (p->wpos - p->rpos);
-        unsigned long n = len - done;
-
-        if (n > space) {
-            n = space;
-        }
-
-        if (n > PIPE_CHUNK) {
-            n = PIPE_CHUNK;
-        }
-
-        if (vm_copy_from_user(kbuf, buf + done, n) != 0) {
+        if (vm_copy_from_user(kbuf, buf + done, chunk) != 0) {
             return -ERR_FAULT;
         }
 
-        for (unsigned long i = 0; i < n; i++) {
-            p->buf[(p->wpos + i) % PIPE_BUF_SIZE] = kbuf[i];
+        unsigned long off = 0;
+
+        spinlock_acquire(&p->lock);
+
+        while (off < chunk) {
+            // Block while the buffer is full and a reader is still attached.
+            while (p->wpos - p->rpos == PIPE_BUF_SIZE && p->read_open) {
+                thread_sleep(&p->write_end, &p->lock);
+            }
+
+            if (!p->read_open) {
+                spinlock_release(&p->lock);
+
+                return -ERR_PIPE;
+            }
+
+            unsigned long space = PIPE_BUF_SIZE - (p->wpos - p->rpos);
+            unsigned long n = chunk - off;
+
+            if (n > space) {
+                n = space;
+            }
+
+            for (unsigned long i = 0; i < n; i++) {
+                p->buf[(p->wpos + i) % PIPE_BUF_SIZE] = kbuf[off + i];
+            }
+
+            p->wpos += n;
+            off += n;
+            thread_wakeup(&p->read_end);
         }
 
-        p->wpos += n;
-        done += n;
-        thread_wakeup(&p->read_end);
+        spinlock_release(&p->lock);
+        done += chunk;
     }
 
     return (long)done;
@@ -122,10 +152,13 @@ static long pipe_write(struct file *f, unsigned long buf, unsigned long len) {
 static void pipe_close_read(struct file *f) {
     struct pipe *p = f->priv;
 
+    spinlock_acquire(&p->lock);
     p->read_open = 0;
     thread_wakeup(&p->write_end);
+    int free_pipe = !p->write_open;
+    spinlock_release(&p->lock);
 
-    if (!p->write_open) {
+    if (free_pipe) {
         page_free(p);
     }
 }
@@ -133,10 +166,13 @@ static void pipe_close_read(struct file *f) {
 static void pipe_close_write(struct file *f) {
     struct pipe *p = f->priv;
 
+    spinlock_acquire(&p->lock);
     p->write_open = 0;
     thread_wakeup(&p->read_end);
+    int free_pipe = !p->read_open;
+    spinlock_release(&p->lock);
 
-    if (!p->read_open) {
+    if (free_pipe) {
         page_free(p);
     }
 }
@@ -147,6 +183,8 @@ int pipe_create(struct file **rf, struct file **wf) {
     if (p == 0) {
         return -ERR_NOMEM;
     }
+
+    spinlock_init(&p->lock, "pipe");
 
     p->read_end.ref = 1;
     p->read_end.priv = p;

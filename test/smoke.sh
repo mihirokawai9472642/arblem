@@ -82,7 +82,7 @@ exec 3> "$INPUT"
 wait_for '^> '
 printf 'pages\rhello\rpages\r' >&3
 printf 'orphan\rorphan\rorphan\rorphan\rorphan\rorphan\rorphan\r' >&3
-printf 'regcheck\rpipecheck\rpages\rhello | upper\rpages\recho arg1 arg2 | upper\rpages\rmemcheck\rpages\rblkcheck\rpages\rfscheck\rpages\rcat /persist\rls\rpages\rcount\rpages\rfault\rpages\rfoo\rpages\rpoweroff\r' >&3
+printf 'regcheck\rpipecheck\rpages\rhello | upper\rpages\recho arg1 arg2 | upper\rpages\rmemcheck\rpages\rblkcheck\rpages\rfscheck\rpages\rcat /persist\rls\rpages\rsmpcheck\rpages\rcount\rpages\rfault\rpages\rfoo\rpages\rpoweroff\r' >&3
 wait_exit
 status=$?
 exec 3>&-
@@ -92,6 +92,7 @@ if grep -q 'panic: ' "$LOG"; then
 fi
 
 check boot     'Hello World from Arblem'
+check smp_boot 'Hart 0x0000000000000001 online'
 check hello    'Hello World from U-mode!'
 check count    'count: 4'
 check fault    'exit: -1'
@@ -105,6 +106,7 @@ check blk      'blk: ok'
 check fs       'fs: ok'
 check cat      'ARBLEM-FS-OK'
 check ls       '^persist'
+check smp      'smp: ok'
 
 # Check that sector 0 written by blkcheck persisted in the disk image.
 if grep -qa 'ARBLEM-BLK-OK' "$DISK"; then
@@ -131,8 +133,8 @@ else
     failed=1
 fi
 
-# Twelve `pages` outputs, all the same: no program leaked memory.
-if [ "$(grep -c '^0x' "$LOG")" -eq 12 ] && [ "$(grep '^0x' "$LOG" | sort -u | wc -l)" -eq 1 ]; then
+# Thirteen `pages` outputs, all the same: no program leaked memory.
+if [ "$(grep -c '^0x' "$LOG")" -eq 13 ] && [ "$(grep '^0x' "$LOG" | sort -u | wc -l)" -eq 1 ]; then
     echo "ok   pages"
 else
     echo "FAIL pages"

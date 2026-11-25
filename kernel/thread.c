@@ -1,35 +1,41 @@
 // Kernel threads: thread table, round-robin scheduler, sleep/wakeup, and
 // exit/wait. A thread that runs a user program also owns its page table and
 // file table, so this is also the process table. See docs/threads.md.
-//
-// The kernel runs on one hart with interrupts off while it handles a trap,
-// so nothing here needs a lock.
 
 #include "thread.h"
+#include "cpu.h"
 #include "error.h"
 #include "file.h"
 #include "page.h"
 #include "panic.h"
 #include "proc.h"
 #include "riscv.h"
+#include "spinlock.h"
 #include "vm.h"
 
-// Slots in the thread table, including the idle thread.
-#define THREAD_MAX 8
+// Slots in the thread table, including one idle thread per hart.
+#define THREAD_MAX 16
 
 void thread_switch(unsigned long *old_sp, unsigned long new_sp);
 void thread_entry(void);
+void thread_entry_unlock(void);
 
-// A thread's state follows from two fields:
-//   stack == 0                       free slot
-//   stack != 0, chan == 0            runnable
-//   stack != 0, chan != 0            sleeping on chan
-//   stack != 0, chan == &thread_dead exited, waiting to be freed
+enum thread_state {
+    THREAD_FREE = 0,
+    THREAD_INIT,
+    THREAD_RUNNABLE,
+    THREAD_RUNNING,
+    THREAD_SLEEPING,
+    THREAD_ZOMBIE,
+};
+
 struct thread {
+    enum thread_state state;
+    int is_idle;             // Non-zero for a per-hart idle thread
     unsigned long sp;        // Saved kernel sp while switched out
-    void *chan;              // Wait channel, 0 if runnable
+    void *chan;              // Wait channel while THREAD_SLEEPING
     unsigned long *vm;       // Page table root, 0 for the kernel's
-    void *stack;             // Kernel stack page, 0 if the slot is free
+    void *stack;             // Kernel stack page, 0 when THREAD_FREE
     int parent;              // ID of the creating thread, -1 if none
     int exit_code;           // Set by thread_exit
     unsigned long user_sp;   // Initial U-mode sp
@@ -40,36 +46,72 @@ struct thread {
     struct file *files[THREAD_FILE_MAX];
 };
 
+static struct spinlock sched_lock = SPINLOCK_INIT("sched");
 static struct thread thread_table[THREAD_MAX];
 
-// Index of the running thread, -1 until thread_start.
-static int thread_current = -1;
+// Wait channel for thread_wait. Only its address matters.
+static char thread_exit_wait;
 
-// Wait channels. Only their addresses matter.
-static char thread_dead;      // Exited threads sleep here forever
-static char thread_exit_wait; // thread_wait sleeps here
+// Called from thread_entry in thread.S on a brand-new thread's first run.
+// Releases the sched_lock held across thread_switch and leaves interrupts off.
+void thread_entry_unlock(void) {
+    cpu_current()->int_was_on = 0;
+    spinlock_release(&sched_lock);
+}
 
-// Runs when nothing else can. Always runnable, so thread_yield always finds a
-// thread. wfi with interrupts enabled stops the hart until the next interrupt.
+// Per-hart idle loop: wait for an interrupt with S-mode interrupts enabled,
+// then yield to check whether another hart woke a runnable thread.
 static void thread_idle(unsigned long arg) {
     (void)arg;
 
     for (;;) {
+        csr_set(sstatus, SSTATUS_SIE);
         __asm__ volatile("wfi");
+        csr_clear(sstatus, SSTATUS_SIE);
+        thread_yield();
+    }
+}
+
+// Free every exited thread whose parent is gone, since nobody will ever wait
+// for it. Detach resources under sched_lock and free them outside the lock so
+// vm_free/page_free never run while sched_lock is held.
+static void thread_reap(void) {
+    for (;;) {
+        unsigned long *vm = 0;
+        void *stack = 0;
+
+        spinlock_acquire(&sched_lock);
+
+        for (int i = 0; i < THREAD_MAX; i++) {
+            struct thread *t = &thread_table[i];
+
+            if (t->state == THREAD_ZOMBIE && t->parent == -1) {
+                vm = t->vm;
+                stack = t->stack;
+                t->vm = 0;
+                t->stack = 0;
+                t->state = THREAD_FREE;
+                break;
+            }
+        }
+
+        spinlock_release(&sched_lock);
+
+        if (stack == 0) {
+            return;
+        }
+
+        if (vm != 0) {
+            vm_free(vm);
+        }
+
+        page_free(stack);
     }
 }
 
 int thread_create(void (*entry)(unsigned long), unsigned long arg,
                   unsigned long *vm) {
-    int id = 0;
-
-    while (id < THREAD_MAX && thread_table[id].stack != 0) {
-        id++;
-    }
-
-    if (id == THREAD_MAX) {
-        return -ERR_AGAIN;
-    }
+    thread_reap();
 
     unsigned char *stack = page_alloc();
 
@@ -87,117 +129,209 @@ int thread_create(void (*entry)(unsigned long), unsigned long arg,
     frame[1] = (unsigned long)entry;        // s0
     frame[2] = arg;                         // s1
 
+    // Inherit the creator's files outside sched_lock so file_ref's file_lock
+    // is never nested inside sched_lock. Only the current thread modifies its
+    // own files[] table.
+    int cur = cpu_current()->current;
+    struct file *inherited[THREAD_FILE_MAX];
+
+    for (int fd = 0; fd < THREAD_FILE_MAX; fd++) {
+        struct file *f = cur >= 0 ? thread_table[cur].files[fd] : 0;
+
+        inherited[fd] = f != 0 ? file_ref(f) : 0;
+    }
+
+    spinlock_acquire(&sched_lock);
+
+    int id = 0;
+
+    while (id < THREAD_MAX && thread_table[id].state != THREAD_FREE) {
+        id++;
+    }
+
+    if (id == THREAD_MAX) {
+        spinlock_release(&sched_lock);
+
+        for (int fd = 0; fd < THREAD_FILE_MAX; fd++) {
+            if (inherited[fd] != 0) {
+                file_close(inherited[fd]);
+            }
+        }
+
+        page_free(stack);
+
+        return -ERR_AGAIN;
+    }
+
     struct thread *t = &thread_table[id];
 
+    t->state = THREAD_INIT;
+    t->is_idle = 0;
     t->sp = (unsigned long)frame;
     t->chan = 0;
     t->vm = vm;
     t->stack = stack;
-    t->parent = thread_current;
+    t->parent = cur;
+    t->exit_code = 0;
     t->user_sp = 0;
     t->user_argc = 0;
     t->user_argv = 0;
     t->heap_base = 0;
     t->heap_end = 0;
 
-    // Inherit the creator's files. Threads created during boot get none.
     for (int fd = 0; fd < THREAD_FILE_MAX; fd++) {
-        struct file *f =
-            thread_current >= 0 ? thread_table[thread_current].files[fd] : 0;
-
-        t->files[fd] = f != 0 ? file_ref(f) : 0;
+        t->files[fd] = inherited[fd];
     }
 
+    spinlock_release(&sched_lock);
+
     return id;
+}
+
+void thread_ready(int id) {
+    spinlock_acquire(&sched_lock);
+    thread_table[id].state = THREAD_RUNNABLE;
+    spinlock_release(&sched_lock);
+}
+
+// Find the next non-idle runnable thread after start, or fall back to this
+// hart's own idle thread. Caller must hold sched_lock.
+static int thread_pick_next(int start) {
+    for (int step = 1; step <= THREAD_MAX; step++) {
+        int i = (start + step) % THREAD_MAX;
+
+        if (thread_table[i].state == THREAD_RUNNABLE &&
+            !thread_table[i].is_idle) {
+            return i;
+        }
+    }
+
+    return cpu_current()->idle;
+}
+
+void thread_init_hart(void) {
+    int idle = thread_create(thread_idle, 0, 0);
+
+    if (idle < 0) {
+        panic("cannot create the idle thread");
+    }
+
+    spinlock_acquire(&sched_lock);
+    thread_table[idle].is_idle = 1;
+    thread_table[idle].state = THREAD_RUNNABLE;
+    cpu_current()->idle = idle;
+    spinlock_release(&sched_lock);
 }
 
 void thread_start(void) {
     unsigned long unused;
 
-    if (thread_create(thread_idle, 0, 0) < 0) {
-        panic("cannot create the idle thread");
+    if (cpu_current()->idle < 0) {
+        thread_init_hart();
     }
 
-    // Start slot 0, the first thread kernel_main created (the shell). The
-    // boot stack's sp goes to a dummy, since nothing will switch back to it.
-    thread_current = 0;
+    spinlock_acquire(&sched_lock);
 
-    vm_switch(thread_table[0].vm);
-    thread_switch(&unused, thread_table[0].sp);
+    struct cpu *c = cpu_current();
+    int next = thread_pick_next(THREAD_MAX - 1);
+
+    thread_table[next].state = THREAD_RUNNING;
+    c->current = next;
+
+    vm_switch(thread_table[next].vm);
+    thread_switch(&unused, thread_table[next].sp);
+    panic("thread_start: returned");
 }
 
-// Release a thread that has exited: its page table, the user pages mapped in
-// it, and its kernel stack. The slot becomes free.
-static void thread_free(struct thread *t) {
-    if (t->vm != 0) {
-        vm_free(t->vm);
+// Switch from the current thread to the next runnable thread (or this hart's
+// idle thread). Caller must hold sched_lock (and no other spinlock) and must
+// already have updated the current thread's state.
+static void thread_sched(void) {
+    if (!spinlock_holding(&sched_lock)) {
+        panic("thread_sched: not holding sched_lock");
     }
 
-    page_free(t->stack);
-    t->stack = 0;
-}
+    struct cpu *c = cpu_current();
 
-// Free every exited thread whose parent is gone, since nobody will ever wait
-// for it. The current thread is skipped: if it has just exited, it is still
-// running on its own kernel stack and page table.
-static void thread_reap(void) {
-    for (int i = 0; i < THREAD_MAX; i++) {
-        struct thread *t = &thread_table[i];
-
-        if (i != thread_current && t->stack != 0 && t->chan == &thread_dead &&
-            t->parent == -1) {
-            thread_free(t);
-        }
+    if (c->lock_depth != 1) {
+        panic("thread_sched: holding extra lock");
     }
-}
 
-void thread_yield(void) {
-    int prev = thread_current;
+    if ((csr_read(sstatus) & SSTATUS_SIE) != 0) {
+        panic("thread_sched: interrupts enabled");
+    }
 
-    thread_reap();
+    int prev = c->current;
+    int next = thread_pick_next(prev);
 
-    // Find the next slot that is in use and not sleeping, wrapping around.
-    // The idle thread guarantees that the loop ends.
-    do {
-        thread_current++;
+    thread_table[next].state = THREAD_RUNNING;
 
-        if (thread_current == THREAD_MAX) {
-            thread_current = 0;
-        }
-    } while (thread_table[thread_current].stack == 0 ||
-             thread_table[thread_current].chan != 0);
-
-    if (thread_current == prev) {
+    if (next == prev) {
         return;
     }
 
-    vm_switch(thread_table[thread_current].vm);
-    thread_switch(&thread_table[prev].sp, thread_table[thread_current].sp);
+    // Preserve int_was_on across the switch: another thread may resume on this
+    // hart with a different saved interrupt state.
+    int int_was_on = c->int_was_on;
+
+    c->current = next;
+    vm_switch(thread_table[next].vm);
+    thread_switch(&thread_table[prev].sp, thread_table[next].sp);
+
+    // After thread_switch we may be on a different hart: reload cpu_current().
+    cpu_current()->int_was_on = int_was_on;
 }
 
-// Callers check their condition in a loop around thread_sleep. Interrupts are
-// off in the kernel, so a wakeup cannot slip in between the check and the
-// sleep.
-void thread_sleep(void *chan) {
-    thread_table[thread_current].chan = chan;
-    thread_yield();
+void thread_yield(void) {
+    thread_reap();
+
+    spinlock_acquire(&sched_lock);
+    thread_table[cpu_current()->current].state = THREAD_RUNNABLE;
+    thread_sched();
+    spinlock_release(&sched_lock);
 }
 
-void thread_wakeup(void *chan) {
+void thread_sleep(void *chan, struct spinlock *lk) {
+    // Acquire sched_lock before releasing lk so a concurrent thread_wakeup
+    // (which acquires sched_lock) cannot slip in between the caller's condition
+    // check and this thread entering THREAD_SLEEPING.
+    spinlock_acquire(&sched_lock);
+    spinlock_release(lk);
+
+    struct thread *t = &thread_table[cpu_current()->current];
+
+    t->chan = chan;
+    t->state = THREAD_SLEEPING;
+    thread_sched();
+    t->chan = 0;
+
+    spinlock_release(&sched_lock);
+    spinlock_acquire(lk);
+}
+
+static void thread_wakeup_locked(void *chan) {
     for (int i = 0; i < THREAD_MAX; i++) {
-        if (thread_table[i].chan == chan) {
-            thread_table[i].chan = 0;
+        if (thread_table[i].state == THREAD_SLEEPING &&
+            thread_table[i].chan == chan) {
+            thread_table[i].state = THREAD_RUNNABLE;
         }
     }
 }
 
-void thread_exit(int code) {
-    struct thread *t = &thread_table[thread_current];
+void thread_wakeup(void *chan) {
+    spinlock_acquire(&sched_lock);
+    thread_wakeup_locked(chan);
+    spinlock_release(&sched_lock);
+}
 
-    t->exit_code = code;
+void thread_exit(int code) {
+    int cur = cpu_current()->current;
+    struct thread *t = &thread_table[cur];
 
     // Close open files now, before turning into a zombie, so a parent
     // waiting for EOF on a pipe does not deadlock waiting for thread_wait.
+    // Done outside sched_lock because file_close acquires file_lock and may
+    // call pipe/fs close callbacks.
     for (int fd = 0; fd < THREAD_FILE_MAX; fd++) {
         if (t->files[fd] != 0) {
             file_close(t->files[fd]);
@@ -205,38 +339,70 @@ void thread_exit(int code) {
         }
     }
 
+    spinlock_acquire(&sched_lock);
+
+    t->exit_code = code;
+
     // Children become orphans. Once an orphan has exited, thread_reap frees
     // it, since no parent is left to wait for it.
     for (int i = 0; i < THREAD_MAX; i++) {
-        if (thread_table[i].parent == thread_current) {
+        if (thread_table[i].state != THREAD_FREE &&
+            thread_table[i].parent == cur) {
             thread_table[i].parent = -1;
         }
     }
 
-    // Let any thread_wait recheck its child, then stop for good. The slot,
-    // stack and page table stay until the parent's thread_wait, or
-    // thread_reap for an orphan, frees them.
-    thread_wakeup(&thread_exit_wait);
-    thread_sleep(&thread_dead);
+    // Wake any parent in thread_wait, mark ourselves a zombie, and switch off
+    // this stack while still holding sched_lock so no other hart can free our
+    // stack or page table until after thread_switch finishes.
+    thread_wakeup_locked(&thread_exit_wait);
+    t->state = THREAD_ZOMBIE;
+    thread_sched();
+
+    panic("thread_exit: zombie resumed");
 }
 
 int thread_wait(unsigned long id, int *code) {
-    if (id >= THREAD_MAX || thread_table[id].stack == 0 ||
-        thread_table[id].parent != thread_current) {
+    spinlock_acquire(&sched_lock);
+
+    int cur = cpu_current()->current;
+
+    if (id >= THREAD_MAX || thread_table[id].state == THREAD_FREE ||
+        thread_table[id].parent != cur) {
+        spinlock_release(&sched_lock);
+
         return -ERR_CHILD;
     }
 
     struct thread *t = &thread_table[id];
 
     // Every exit wakes every waiter, so recheck that it was this child.
-    while (t->chan != &thread_dead) {
-        thread_sleep(&thread_exit_wait);
+    while (t->state != THREAD_ZOMBIE) {
+        struct thread *self = &thread_table[cur];
+
+        self->chan = &thread_exit_wait;
+        self->state = THREAD_SLEEPING;
+        thread_sched();
+        self->chan = 0;
     }
 
     *code = t->exit_code;
 
+    unsigned long *vm = t->vm;
+    void *stack = t->stack;
+
+    t->vm = 0;
+    t->stack = 0;
+    t->state = THREAD_FREE;
+
+    spinlock_release(&sched_lock);
+
     // The child never runs again, so its page table and kernel stack can go.
-    thread_free(t);
+    if (vm != 0) {
+        vm_free(vm);
+    }
+
+    page_free(stack);
 
     return 0;
 }
@@ -246,15 +412,11 @@ struct file *thread_file(unsigned long fd) {
         return 0;
     }
 
-    return thread_table[thread_current].files[fd];
-}
-
-void thread_set_file(int id, unsigned long fd, struct file *f) {
-    thread_table[id].files[fd] = f;
+    return thread_table[cpu_current()->current].files[fd];
 }
 
 int thread_alloc_fd(struct file *f) {
-    struct thread *t = &thread_table[thread_current];
+    struct thread *t = &thread_table[cpu_current()->current];
 
     for (int fd = 0; fd < THREAD_FILE_MAX; fd++) {
         if (t->files[fd] == 0) {
@@ -272,7 +434,7 @@ int thread_close_fd(unsigned long fd) {
         return -ERR_BADF;
     }
 
-    struct thread *t = &thread_table[thread_current];
+    struct thread *t = &thread_table[cpu_current()->current];
     struct file *f = t->files[fd];
 
     if (f == 0) {
@@ -296,7 +458,7 @@ void thread_set_start(int id, unsigned long sp, unsigned long argc,
 
 void thread_get_start(unsigned long *sp, unsigned long *argc,
                       unsigned long *argv) {
-    struct thread *t = &thread_table[thread_current];
+    struct thread *t = &thread_table[cpu_current()->current];
 
     *sp = t->user_sp;
     *argc = t->user_argc;
@@ -316,7 +478,7 @@ void thread_set_heap(int id, unsigned long base) {
 }
 
 long thread_sbrk(long delta) {
-    struct thread *t = &thread_table[thread_current];
+    struct thread *t = &thread_table[cpu_current()->current];
     unsigned long old_end = t->heap_end;
 
     if (delta == 0) {
@@ -356,11 +518,13 @@ long thread_sbrk(long delta) {
 }
 
 int thread_fault(unsigned long va) {
-    if (thread_current < 0) {
+    int cur = cpu_current()->current;
+
+    if (cur < 0) {
         return -1;
     }
 
-    struct thread *t = &thread_table[thread_current];
+    struct thread *t = &thread_table[cur];
 
     if (t->vm == 0) {
         return -1;

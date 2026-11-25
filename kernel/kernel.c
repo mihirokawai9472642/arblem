@@ -3,6 +3,7 @@
 
 #include "bcache.h"
 #include "console.h"
+#include "cpu.h"
 #include "fd.h"
 #include "fdt.h"
 #include "kfs.h"
@@ -11,7 +12,6 @@
 #include "panic.h"
 #include "plic.h"
 #include "proc.h"
-#include "riscv.h"
 #include "sbi.h"
 #include "thread.h"
 #include "timer.h"
@@ -22,15 +22,20 @@
 // First byte after the kernel image, page aligned (kernel/linker.ld).
 extern char __kernel_end[];
 
+// Secondary hart assembly entry point (kernel/boot.S).
+extern void _start_secondary(void);
+
+// Boot stacks for secondary harts (abandoned once thread_start switches to the
+// first thread, just like stack_top in boot.S).
+static _Alignas(16) unsigned char secondary_stacks[CPU_MAX][4096];
+
+// Number of secondary harts that have finished per-hart setup.
+static int harts_online;
+
 // First kernel thread: runs once the scheduler and idle thread exist, so
 // fs_init and disk-backed proc_spawn can sleep on VirtIO DMA interrupts.
 static void kernel_init(unsigned long arg) {
     (void)arg;
-
-    // Keep interrupts off in kernel code (matching Arblem's design rule so
-    // sleep/wakeup cannot lose a wakeup). Interrupts turn on in thread_idle
-    // and in U-mode.
-    csr_clear(sstatus, SSTATUS_SIE);
 
     if (fs_init() == 0) {
         struct fs_super sb;
@@ -42,27 +47,54 @@ static void kernel_init(unsigned long arg) {
         kprintf("FS: none\n");
     }
 
+    // Give kernel_init the console so shell inherits stdin, stdout, and stderr
+    // atomically during proc_spawn before another hart can run it.
+    if (thread_alloc_fd(console_file()) != FD_STDIN ||
+        thread_alloc_fd(console_file()) != FD_STDOUT ||
+        thread_alloc_fd(console_file()) != FD_STDERR) {
+        panic("cannot attach console");
+    }
+
     int shell = proc_spawn("shell", 0, 0);
 
     if (shell < 0) {
         panic("cannot start the shell");
     }
 
-    // Give the shell the console, which the programs it spawns inherit.
-    thread_set_file(shell, FD_STDIN, console_file());
-    thread_set_file(shell, FD_STDOUT, console_file());
-    thread_set_file(shell, FD_STDERR, console_file());
-
     // Orphan itself so thread_reap frees this boot thread's stack and slot.
     thread_exit(0);
+}
+
+// Called from _start_secondary in boot.S on each secondary hart.
+void kernel_secondary(unsigned long hartid) {
+    cpu_init(hartid);
+    vm_switch(0);
+
+    plic_init_hart();
+    plic_enable(uart_irq());
+
+    if (virtio_blk_sectors() > 0) {
+        plic_enable(virtio_blk_irq());
+    }
+
+    timer_init_hart();
+    thread_init_hart();
+
+    kprintf("Hart %x online\n", hartid);
+    __atomic_add_fetch(&harts_online, 1, __ATOMIC_RELEASE);
+
+    // Does not return.
+    thread_start();
 }
 
 // Called from _start in boot.S with the arguments OpenSBI passed in a0 and a1.
 // Interrupts stay globally off (sstatus.SIE = 0) until the first thread runs.
 void kernel_main(unsigned long hartid, unsigned long dtb) {
+    cpu_init(hartid);
+
     kprintf("Hello World from Arblem :)\n");
 
-    kprintf("HartID: %x\n", hartid);
+    kprintf("HartID: %x\n", cpu_current()->hartid);
     kprintf("DTB: %x\n", dtb);
     kprintf("SBI: %x\n", sbi_spec_version());
 
@@ -72,6 +104,7 @@ void kernel_main(unsigned long hartid, unsigned long dtb) {
         panic("invalid device tree");
     }
 
+    kprintf("CPUs: %x\n", (unsigned long)info.hart_count);
     kprintf("RAM: %x + %x\n", info.ram_base, info.ram_size);
     kprintf("UART: %x (irq %x)\n", info.uart.base,
             (unsigned long)info.uart.irq);
@@ -122,9 +155,39 @@ void kernel_main(unsigned long hartid, unsigned long dtb) {
     bcache_init();
     timer_init(info.timebase_freq);
 
-    if (thread_create(kernel_init, 0, 0) < 0) {
+    // Start every other hart found in the device tree and wait for them to
+    // finish per-hart setup (including idle thread allocation) before starting
+    // kernel_init and the shell.
+    int started = 0;
+
+    for (int i = 0; i < info.hart_count; i++) {
+        unsigned long h = info.harts[i];
+
+        if (h == hartid || h >= CPU_MAX) {
+            continue;
+        }
+
+        unsigned long stack_top =
+            (unsigned long)(secondary_stacks[h] + sizeof(secondary_stacks[h]));
+
+        if (sbi_hart_start(h, (unsigned long)_start_secondary, stack_top) !=
+            0) {
+            panic("cannot start secondary hart");
+        }
+
+        started++;
+    }
+
+    while (__atomic_load_n(&harts_online, __ATOMIC_ACQUIRE) < started) {
+    }
+
+    int init = thread_create(kernel_init, 0, 0);
+
+    if (init < 0) {
         panic("cannot start kernel_init");
     }
+
+    thread_ready(init);
 
     // Does not return.
     thread_start();
