@@ -53,8 +53,10 @@ verified before mapping pages.
    array there, 16-byte aligned for the `lp64d` ABI. When `argc == 0` or
    `argv == 0`, `proc_spawn` passes `{name}` so `argv[0]` is always set.
 4. Creates a thread with `proc_entry` as its entry function and the ELF entry
-   point as its argument, then stores the initial `sp`, `argc`, and `argv` with
-   `thread_set_start` and the initial heap break with `thread_set_heap`.
+   point as its argument, stores the initial `sp`, `argc`, and `argv` with
+   `thread_set_start` and the initial heap break with `thread_set_heap`, and
+   finally marks it runnable with `thread_ready(id)` so another hart cannot
+   pick it before setup finishes.
 
 If any step fails, `vm_free` releases the page table and every page mapped so
 far, and the error is returned.

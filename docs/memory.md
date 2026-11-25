@@ -5,9 +5,11 @@ pages, and `kernel/vm.c` maps those pages into Sv39 page tables.
 
 ## Physical pages (`kernel/page.c`)
 
-The allocator is a singly linked free list. Each free page stores the pointer to
-the next free page in its own first 8 bytes, so the list needs no memory of its
-own.
+The allocator is a singly linked free list guarded by `page_lock`
+(`struct spinlock`). Each free page stores the pointer to the next free page in
+its own first 8 bytes, so the list needs no memory of its own. `page_alloc()`
+releases `page_lock` before zeroing the popped page so other harts do not spin
+during the 4 KiB write loop.
 
 | Function            | Behavior                                                               |
 |---------------------|------------------------------------------------------------------------|
@@ -115,10 +117,12 @@ See [Processes](processes.md) for how the segments and stack are loaded, and
 
 ## Switching address spaces
 
-`vm_switch(root)` writes `satp` and flushes the TLB with `sfence.vma`. Passing
-0 selects the kernel table, which is what kernel-only threads such as the idle
-thread use. `thread_yield` calls `vm_switch` on every switch, so the current
-page table always belongs to the current thread.
+`vm_switch(root)` records `root` in `cpu_current()->vm_root` (so each hart tracks
+its own active address space), writes `satp`, and flushes the TLB with
+`sfence.vma`. Passing 0 selects `vm_kernel_root`, which kernel-only threads (such
+as `thread_idle`) and secondary harts entering `kernel_secondary` use.
+`thread_sched` calls `vm_switch` on every switch, so each hart's page table
+always belongs to the thread running on it.
 
 ## Copying to and from user memory
 
@@ -126,7 +130,7 @@ System calls receive user pointers. The kernel must not just dereference them:
 the pointer could point at a kernel page, at an unmapped page, or at a page the
 program may not write. `vm_copy_from_user` and `vm_copy_to_user` handle this:
 
-1. `vm_check_user` walks the *current* page table for every page in the range,
+1. `vm_check_user` walks `cpu_current()->vm_root` for every page in the range,
    and requires `V`, `U`, and `R` (for reading) or `W` (for writing). When a
    page is not mapped yet, it calls `thread_fault(va)` so an untouched
    demand-paged heap or stack page passed to a system call is mapped on the

@@ -7,7 +7,7 @@ This page follows the machine from reset to the shell's first prompt.
 `make run` starts QEMU with:
 
 ```
-qemu-system-riscv64 -machine virt -nographic -bios default \
+qemu-system-riscv64 -machine virt -smp 2 -nographic -bios default \
     -global virtio-mmio.force-legacy=false \
     -drive file=build/disk.img,if=none,format=raw,id=hd0 \
     -device virtio-blk-device,drive=hd0,bus=virtio-mmio-bus.0 \
@@ -42,24 +42,26 @@ The linker script puts `.text.boot` first, so `_start` is at `0x80200000`.
    is in `.bss` too, which is fine because nothing has been pushed on it yet.
 3. Set `stvec` to `trap_entry`, so any trap from now on goes to the kernel.
 4. Set `sscratch` to 0. This marks "the hart is in S-mode" for the trap entry
-   code (see [Traps](traps.md#the-sscratch-convention)).
+   code (see [Traps](traps.md#the-tp-and-sscratch-convention)).
 5. Call `kernel_main(hartid, dtb)`, keeping `a0` and `a1` from OpenSBI.
 
 ## 3. `kernel_main` (`kernel/kernel.c`)
 
 | Step                                   | What it does                                                         |
 |----------------------------------------|----------------------------------------------------------------------|
+| `cpu_init(hartid)`                     | Initialize this hart's `struct cpu` and point `tp` at it             |
 | `kprintf(...)`                         | Print the banner, hart ID, DTB address and SBI version through SBI   |
-| `fdt_parse(dtb, &info)`                | Parse the DTB for RAM, timer frequency, PLIC, UART, and VirtIO MMIO slots; print detected hardware and validate required fields |
+| `fdt_parse(dtb, &info)`                | Parse the DTB for CPUs (`/cpus/cpu@N`), RAM, timer frequency, PLIC, UART, and VirtIO MMIO slots; print detected hardware and validate required fields |
 | `page_init(...)` (below and above DTB) | Reserve the DTB pages `[dtb_start, dtb_end)` and add usable RAM below (`[__kernel_end, dtb_start)`) and above (`[dtb_end, ram_end)`) to the free list |
 | `vm_init(&info)`                       | Build the kernel page table (MMIO devices, kernel, and RAM up to `ram_end`) and turn on Sv39 paging |
 | `uart_init(base, irq)`                 | Record the UART MMIO base and IRQ and enable its receive interrupt   |
-| `plic_init(base)`, `plic_enable(uart.irq)` | Record the PLIC base, route UART interrupts to this hart's S-mode, and enable `sie.SEIE` |
+| `plic_init(base)`, `plic_enable(uart.irq)` | Record the PLIC base, route UART interrupts to this hart's S-mode context, and enable `sie.SEIE` |
 | `virtio_blk_init(&info)`, `plic_enable(irq)` | Probe VirtIO MMIO slots for a Modern v2 block device, initialize queue 0, and enable its PLIC IRQ if found |
-| `timer_init(timebase_freq)`            | Compute the 100 Hz interval from the DTB's `timebase-frequency`, arm the first timer interrupt, and enable `sie.STIE` |
 | `bcache_init()`                        | Initialize the 4 KiB LRU block cache list                             |
-| `thread_create(kernel_init, 0, 0)`     | Create the `kernel_init` boot thread (runs once the scheduler starts) |
-| `thread_start()`                       | Create the idle thread and switch to `kernel_init` (slot 0)           |
+| `timer_init(timebase_freq)`            | Compute the 100 Hz interval from the DTB's `timebase-frequency`, record the boot hart, arm the first timer interrupt, and enable `sie.STIE` |
+| `sbi_hart_start(...)`, wait for `harts_online` | Start every other hart found in the DTB at `_start_secondary` with its boot stack in `secondary_stacks[h]`, and wait until all secondary harts finish per-hart setup |
+| `thread_create(kernel_init, 0, 0)`, `thread_ready(init)` | Create the `kernel_init` boot thread and mark it runnable |
+| `thread_start()`                       | Create this hart's idle thread and switch to `kernel_init` (slot 0)  |
 
 `sie` bits only enable interrupt *sources*. The global switch `sstatus.SIE`
 stays off during `kernel_main`, so no interrupt arrives until the first thread
@@ -69,21 +71,38 @@ runs.
 at its physical address. `kernel_main` keeps the DTB's own pages reserved (out
 of the free list) and reclaims any usable RAM above them up to `ram_end`.
 
-## 4. The first thread
+## 4. Secondary harts (`_start_secondary` and `kernel_secondary`)
 
-`thread_start` creates the idle thread in slot 1 and switches to slot 0
+`kernel_main` starts each additional hart via SBI HSM (`sbi_hart_start`).
+OpenSBI enters `_start_secondary` (`kernel/boot.S`) in S-mode with paging off,
+`a0 = hartid`, and `a1 = stack_top` (the top of `secondary_stacks[h]`):
+
+1. `_start_secondary` sets `sp = a1`, sets `stvec = trap_entry`, clears
+   `sscratch = 0`, and calls `kernel_secondary(hartid)`.
+2. `kernel_secondary` calls `cpu_init(hartid)` and `vm_switch(0)` (turning on
+   Sv39 with the shared kernel page table), runs `plic_init_hart()` and enables
+   the UART and VirtIO-blk IRQs for this hart's S-mode context, calls
+   `timer_init_hart()` and `thread_init_hart()`, prints `Hart <id> online`,
+   atomically increments `harts_online`, and enters `thread_start()`.
+
+Waiting for `harts_online` guarantees every hart has created its idle thread
+before `kernel_init` mounts the filesystem and starts the shell.
+
+## 5. The first thread
+
+`thread_start` creates this hart's idle thread and switches to slot 0
 (`kernel_init`). The switch abandons the boot stack: from here on, code always
 runs on a thread's own kernel stack.
 
-`kernel_init` starts in `thread_entry`, clears `sstatus.SIE` to uphold the
-kernel's interrupts-off rule, and then:
+`kernel_init` starts in `thread_entry`, which calls `thread_entry_unlock` to
+release `sched_lock` while keeping `sstatus.SIE` off, and then:
 
 1. Calls `fs_init()` to read and validate the superblock from block 1. Because
-   the scheduler and `thread_idle` now exist, `virtio_blk_read` can sleep on DMA
+   the scheduler and idle threads now exist, `virtio_blk_read` can sleep on DMA
    completion interrupts while `thread_idle` waits in `wfi`.
-2. Calls `proc_spawn("shell", 0, 0)` to load `shell` from the filesystem into a
-   new address space and thread, and assigns console stdin, stdout, and stderr to
-   it via `thread_set_file`.
+2. Attaches the console (`console_file()`) to its own descriptors 0, 1, and 2
+   with `thread_alloc_fd` before calling `proc_spawn("shell", 0, 0)`, so `shell`
+   inherits stdin, stdout, and stderr atomically before another hart can run it.
 3. Exits via `thread_exit(0)`. With no parent (`parent == -1`), `thread_reap`
    frees `kernel_init`'s kernel stack and slot right away.
 

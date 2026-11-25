@@ -40,6 +40,7 @@ File descriptors 0, 1 and 2 are the console, inherited from the shell.
 | `rm` | Removes one or more files or empty directories using `sys_unlink` |
 | `mkdir` | Creates one or more directories using `sys_mkdir` |
 | `fscheck` | Checks file R/W, `O_TRUNC`, 5000-byte multi-block I/O, directories, `unlink`, and error codes, leaving `/persist` on disk and printing `fs: ok`; used by the smoke test |
+| `smpcheck` | Spawns four parallel workers exercising demand-paged `sbrk`, concurrent FS operations, shared pipe I/O, per-process `tp` preservation, and boot-hart timer ticks, printing `smp: ok`; used by the smoke test |
 
 ## The shell
 

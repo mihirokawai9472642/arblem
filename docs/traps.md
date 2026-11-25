@@ -24,33 +24,41 @@ kernel stack on its own.
 `sret` undoes this: it jumps to `sepc`, sets the privilege level from `SPP`,
 and restores `SIE` from `SPIE`.
 
-## The `sscratch` convention
+## The `tp` and `sscratch` convention
 
-`sscratch` is a CSR that the hardware never touches. Arblem uses it to tell
-where a trap came from:
+In S-mode, `tp` points to the current hart's `struct cpu` (`&cpus[hartid]`),
+set by `cpu_init`. `sscratch` is a CSR that the hardware never touches, and
+Arblem uses it together with `tp` to find both the hart state and the thread's
+kernel stack:
 
-| Where the hart is | `sscratch` holds                                |
-|-------------------|-------------------------------------------------|
-| U-mode            | Kernel stack pointer for the current thread's next trap |
-| S-mode            | 0                                               |
+| Where the hart is | `tp`               | `sscratch`         | `cpu->kernel_sp`                          |
+|-------------------|--------------------|--------------------|-------------------------------------------|
+| S-mode            | `&cpus[hartid]`    | 0                  | (unused)                                  |
+| U-mode            | User program `tp`  | `&cpus[hartid]`    | Top of the current thread's kernel stack  |
 
-`trap_entry` starts with `csrrw sp, sscratch, sp`, which swaps the two:
+`trap_entry` starts with `csrrw tp, sscratch, tp`, which swaps `tp` and
+`sscratch`:
 
-- **From U-mode**, `sp` becomes the kernel stack, and `sscratch` now holds the
-  user `sp`.
-- **From S-mode**, `sp` becomes 0. The code sees the zero and reads
-  `sscratch` back into `sp`, so it keeps using the current kernel stack.
+- **From U-mode**, `tp` becomes `&cpus[hartid]` (non-zero), and `sscratch` now
+  holds the user `tp`. The entry code stashes user `sp` in `cpu->user_sp`, loads
+  the thread's kernel stack from `cpu->kernel_sp`, pushes the frame, saves user
+  `sp` and user `tp`, and clears `sscratch` to 0.
+- **From S-mode**, `tp` becomes 0. The code swaps `sscratch` back into `tp`
+  (clearing `sscratch` to 0) and pushes the frame onto the current kernel stack.
 
-Either way, the original `sp` is now in `sscratch`. The entry code saves it into
-the trap frame and writes 0 into `sscratch`, because the hart is now in S-mode.
-A trap taken while handling this one (a breakpoint, for example) then takes the
-"from S-mode" path.
+On the way out:
 
-On the way out, if the trap is returning to U-mode, `trap_entry` pops the frame
-off the kernel stack and writes the resulting `sp` back into `sscratch` before
-restoring registers. That is the same value `sscratch` held on entry. Kernel
-code that enters U-mode for the first time, `trap_enter_user`, sets `sscratch`
-in the same way.
+- **Returning to U-mode (`sstatus.SPP == 0`)**: the thread may have migrated to
+  another hart during `trap_handler`, so `trap_entry` writes
+  `sp + TRAP_FRAME_SIZE` into `CPU_KERNEL_SP(tp)` on the *current* hart, puts
+  `tp` (`&cpus[hartid]`) into `sscratch`, and restores the user `tp` from the
+  frame before popping the remaining registers and running `sret`.
+- **Returning to S-mode (`sstatus.SPP == 1`)**: `trap_entry` skips updating
+  `sscratch` and skips loading `tp` from the frame, so `tp` stays bound to the
+  current physical hart even across thread migration.
+
+Kernel code entering U-mode for the first time (`trap_enter_user`) sets
+`CPU_KERNEL_SP(tp)` and `sscratch` in the same way.
 
 ## The trap frame
 
@@ -73,10 +81,11 @@ The frame holds the caller-saved registers, plus `gp` and `tp`.
 
 `gp` (global pointer) and `tp` (thread pointer) are neither caller-saved nor
 callee-saved: the ABI fixes them for the whole program, and no function
-touches them. They still hold the user program's values when the trap arrives,
-but if the trap switches threads, the next program overwrites them. Saving
-them in the frame, which lives on this thread's kernel stack, gives every
-program its own copy.
+touches them. For user traps, `gp` and `tp` still hold the user program's
+values; saving them in the frame on the thread's kernel stack lets each program
+keep its own values across preemption and hart migration. In S-mode, `tp`
+always points to the current physical hart's `struct cpu`, so S-mode trap
+returns never overwrite `tp` from the frame.
 
 The frame is 19 registers, rounded up to keep the stack 16-byte aligned.
 
@@ -114,9 +123,8 @@ one.
 Every interrupt ends with `thread_yield()`, so the 100 Hz timer gives each
 runnable thread a time slice of at most 10 ms. Since the kernel runs with
 `sstatus.SIE` off (see [Architecture](architecture.md#design-rules)),
-interrupts arrive only while a thread is in U-mode, while the idle thread is in
-`wfi`, or while a new thread runs its first few instructions. A thread is never
-preempted while it handles a trap.
+interrupts arrive only while a thread is in U-mode or while `thread_idle` is
+waiting in `wfi`. A thread is never preempted while it handles a trap.
 
 S-mode interrupts are always enabled while the hart is in U-mode, whatever
 `SIE` says. That is why `trap_enter_user` can clear `SIE` before `sret` without
@@ -130,8 +138,9 @@ as if it were returning from a trap:
 1. Clear `SIE`, so no trap can arrive while `sscratch` is non-zero in S-mode.
 2. Clear `SPP`, so `sret` goes to U-mode.
 3. Set `sepc` to the program's entry point.
-4. Put the current kernel `sp` in `sscratch`. This is the kernel stack for the
-   thread's future traps.
+4. Save the current kernel `sp` in `CPU_KERNEL_SP(tp)` and write `tp`
+   (`&cpus[hartid]`) to `sscratch`. This sets the kernel stack and per-hart CPU
+   pointer for the thread's future traps from U-mode.
 5. Load the user stack pointer, `a0 = argc`, and `a1 = argv`.
 6. Clear all 28 other integer registers, so the program does not start with
    kernel or previous-thread values left in them.

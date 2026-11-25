@@ -11,13 +11,12 @@ No known bugs at the moment.
 
 ### Kernel
 
-- **One hart, no locks.** The kernel relies on running with interrupts off and
-  on a single hart. See [Architecture](architecture.md#design-rules).
 - **No kernel stack guard.** Each kernel stack is one page, with ordinary
   memory on both sides. An overflow silently corrupts the neighboring page.
-- **Fixed-size tables.** At most 8 threads (including the idle thread), 8 file
-  descriptors per thread, 16 open filesystem file descriptions (`FS_OPEN_MAX`),
-  and 16 block cache buffers (`BCACHE_COUNT`).
+- **Fixed-size tables.** Up to 8 harts (`CPU_MAX`), 16 threads (`THREAD_MAX`,
+  including one idle thread per hart), 8 file descriptors per thread, 16 open
+  filesystem file descriptions (`FS_OPEN_MAX`), and 16 block cache buffers
+  (`BCACHE_COUNT`).
 - **Nothing restarts the shell.** If the shell faults or exits, it is freed
   like any other orphan, only the idle thread is left, and the machine hangs
   silently.
