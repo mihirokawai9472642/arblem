@@ -77,6 +77,12 @@ C formatting and static checks are configured in `.clang-format` and
   `bugprone-easily-swappable-parameters` and `bugprone-reserved-identifier`
   disabled) across `kernel/*.c`, `lib/*.c` and `user/*.c`. `.zed/settings.json`
   runs `clangd` inside the container, so the same diagnostics appear in Zed.
+- `.zed/settings.json` also runs `riscv-asm-lsp` (installed in the container at
+  the version pinned in the `Dockerfile`) for `kernel/*.S`, through the Zed
+  RISC-V Assembly extension. It takes each file's flags (`-march=rv64gc`,
+  `-I inc`, ...) from `build/compile_commands.json`, so run `make` once before
+  opening assembly files. Its built-in checks catch errors in unsaved text;
+  `make` remains the reference.
 
 ## Smoke test (`test/smoke.sh`)
 

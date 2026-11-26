@@ -7,7 +7,8 @@ assembly. It boots on the QEMU `virt` machine through OpenSBI, runs user
 programs in U-mode in separate Sv39 address spaces, and provides a tiny shell.
 The cross compiler, QEMU, and the other tools run in a container, so the only
 host requirements are Docker Engine (with the Compose plugin) and, for editing,
-Zed (its tasks and `clangd` use the container).
+Zed with the RISC-V Assembly extension (its tasks and its `clangd` and
+`riscv-asm-lsp` language servers use the container).
 
 ```text
 Hello World from Arblem :)
@@ -41,8 +42,9 @@ exit: -1
 
 The development container (`Dockerfile` and `compose.yaml`, based on Debian 13
 Trixie) provides Clang 19, LLD 19, LLVM 19, LLDB 19, `clangd` 19,
-`clang-format` 19, `clang-tidy` 19, QEMU 10 (with OpenSBI 1.6), and GNU Make
-4.4.
+`clang-format` 19, `clang-tidy` 19, QEMU 10 (with OpenSBI 1.6), GNU Make 4.4,
+and `riscv-asm-lsp` 0.3.0 (a language server for the assembly sources, pinned
+in the `Dockerfile`).
 
 Run these from the project root:
 
@@ -127,7 +129,7 @@ and SSH are not available in the container.
 | `Makefile`                     | Target, build settings, QEMU options, and targets        |
 | `Dockerfile`, `compose.yaml`   | Development container                                    |
 | `.clang-format`, `.clang-tidy` | Formatting and static analysis settings                  |
-| `.zed/`                        | Zed tasks and container `clangd` configuration           |
+| `.zed/`                        | Zed tasks and container language server configuration    |
 | `AGENTS.md`                    | Instructions for coding agents                           |
 
 ## Documentation

@@ -8,6 +8,25 @@
         "path": "/usr/bin/docker",
         "arguments": ["compose", "exec", "-T", "dev", "clangd"]
       }
+    },
+    "riscv-asm-lsp": {
+      // Run the assembly language server from the container too, so its
+      // version is pinned in the Dockerfile instead of being whatever release
+      // the Zed extension downloads. It reads the flags for kernel/*.S
+      // (-march, -I inc, ...) from build/compile_commands.json.
+      "binary": {
+        "path": "/usr/bin/docker",
+        "arguments": ["compose", "exec", "-T", "dev", "riscv-asm-lsp"]
+      }
+    }
+  },
+  "languages": {
+    // Zed extensions cannot turn these on by themselves: the outline needs
+    // document symbols, and semantic tokens color registers, CSRs, labels and
+    // macros on top of the tree-sitter highlighting.
+    "RISC-V Assembly": {
+      "document_symbols": "on",
+      "semantic_tokens": "combined"
     }
   }
 }
