@@ -52,6 +52,8 @@ both sides.
 - `docker compose exec dev make format`: formats all C sources and headers
   (`kernel/`, `lib/`, `inc/`, `user/`, `tools/`) with `clang-format`. Assembly
   is not covered.
+- `docker compose exec dev make format-check`: checks C formatting without
+  modifying files (`clang-format --dry-run --Werror`).
 - `docker compose exec dev make tidy`: checks all C sources (`kernel/`, `lib/`,
   `user/`) with `clang-tidy`.
 - `docker compose exec dev make clean`: deletes `build/`.
@@ -77,10 +79,12 @@ available there.
 
 ## Testing
 
-- `make` builds with no warnings.
+- `make` builds with no warnings, and `make format-check` exits cleanly.
 - `make tidy` reports no warnings in the project's own files (warnings it
   suppresses in system headers, or explicitly justified `NOLINT` annotations
   such as the intentional page fault in `user/fault.c`, do not count).
+- Pass `WERROR=1` to `make` or `make tidy` to turn warnings into errors, as
+  enforced by CI (`.github/workflows/ci.yml`).
 - `make test` passes every check (`boot`, `smp_boot`, `hello`, `count`, `fault`,
   `unknown`, `regs`, `pipe`, `pipeline`, `args`, `mem`, `blk`, `fs`, `cat`,
   `ls`, `smp`, `blk_persist`, `fs_persist`, `orphan`, `pages`, `poweroff`).

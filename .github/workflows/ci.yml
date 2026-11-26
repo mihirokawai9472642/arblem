@@ -1,0 +1,93 @@
+# Continuous integration: build the kernel and user programs, and run the smoke
+# test inside the development container.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# This workflow only reads the repository; keep token permissions minimal.
+permissions:
+  contents: read
+
+# Cancel an older run on the same PR when new commits are pushed, but let
+# pushes to main finish so every merged commit is checked.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      # Buildx with the GitHub Actions cache avoids reinstalling the toolchain
+      # on every run when the Dockerfile has not changed.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build development container
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: arblem-dev
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Run as the runner's UID/GID so files created under build/ stay writable
+      # across steps (the image's dev user is UID 1000, while GitHub runners
+      # use UID 1001). Mount at $PWD so paths match the host.
+      - name: Check formatting
+        run: |
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD:$PWD" \
+            -w "$PWD" \
+            arblem-dev make format-check
+
+      - name: Build
+        run: |
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD:$PWD" \
+            -w "$PWD" \
+            arblem-dev make WERROR=1
+
+      - name: Run clang-tidy
+        run: |
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD:$PWD" \
+            -w "$PWD" \
+            arblem-dev make tidy WERROR=1
+
+      - name: Run smoke test
+        run: |
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD:$PWD" \
+            -w "$PWD" \
+            arblem-dev make test
+
+      # Smoke test failures point to build/test.log, which disappears when the
+      # runner exits. Print it in the job log and upload it as an artifact.
+      - name: Print smoke test log on failure
+        if: failure()
+        run: |
+          if [ -f build/test.log ]; then
+            cat build/test.log
+          fi
+
+      - name: Upload smoke test log on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-test-log
+          path: build/test.log
+          if-no-files-found: ignore
+          retention-days: 7
