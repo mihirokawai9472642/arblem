@@ -20,6 +20,15 @@ QEMU    := qemu-system-riscv64
 CFLAGS    := $(TARGET) -std=c17 -Wall -Wextra -g -ffreestanding -Iinc
 HOSTFLAGS := -std=c17 -Wall -Wextra -g -Iinc
 ASFLAGS   := $(TARGET) -g -Iinc
+TIDYFLAGS :=
+
+# Pass WERROR=1 (used in CI) to turn compiler and clang-tidy warnings into errors.
+ifeq ($(WERROR),1)
+CFLAGS    += -Werror
+HOSTFLAGS += -Werror
+ASFLAGS   += -Werror
+TIDYFLAGS += --warnings-as-errors='*'
+endif
 
 # Two harts on the virt machine, OpenSBI as firmware, console on stdio.
 # Force modern VirtIO 1.0+ (MMIO v2) instead of legacy v1.
@@ -37,13 +46,14 @@ USER_OBJS   := $(patsubst %,$(BUILD)/%.o,$(wildcard user/*.c))
 ALL_OBJS    := $(KERNEL_OBJS) $(LIB_OBJS) $(USER_OBJS)
 USER_ELFS   := $(patsubst %,$(BUILD)/user/%.elf,$(USER_PROGS))
 
-C_SOURCES := $(wildcard kernel/*.c lib/*.c user/*.c)
-C_HEADERS := $(wildcard kernel/*.h inc/*.h user/*.h)
+C_SOURCES    := $(wildcard kernel/*.c lib/*.c user/*.c)
+C_HEADERS    := $(wildcard kernel/*.h inc/*.h user/*.h)
+FORMAT_FILES := $(C_SOURCES) $(C_HEADERS) $(wildcard tools/*.c)
 
 # Only the rules below apply; make's implicit rules would get in the way.
 MAKEFLAGS += --no-builtin-rules
 
-.PHONY: all run test debug lldb clean format tidy
+.PHONY: all run test debug lldb clean format format-check tidy
 
 all: $(KERNEL) $(DISK) $(BUILD)/compile_commands.json
 
@@ -77,10 +87,13 @@ clean:
 # Formatting and static analysis follow .clang-format and .clang-tidy.
 # Assembly files are not covered.
 format:
-	clang-format -i $(C_SOURCES) $(C_HEADERS) $(wildcard tools/*.c)
+	clang-format -i $(FORMAT_FILES)
+
+format-check:
+	clang-format --dry-run --Werror $(FORMAT_FILES)
 
 tidy: $(BUILD)/compile_commands.json
-	clang-tidy -p $(BUILD) $(C_SOURCES)
+	clang-tidy -p $(BUILD) $(TIDYFLAGS) $(C_SOURCES)
 
 # -MMD -MP: record header dependencies, so editing a header rebuilds its users.
 # -MJ: write a compilation database entry for clangd next to each object.

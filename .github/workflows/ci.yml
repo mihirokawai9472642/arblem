@@ -25,13 +25,29 @@ jobs:
       # Run as the runner's UID/GID so files created under build/ stay writable
       # across steps (the image's dev user is UID 1000, while GitHub runners
       # use UID 1001). Mount at $PWD so paths match the host.
+      - name: Check formatting
+        run: |
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD:$PWD" \
+            -w "$PWD" \
+            arblem-dev make format-check
+
       - name: Build
         run: |
           docker run --rm \
             --user "$(id -u):$(id -g)" \
             -v "$PWD:$PWD" \
             -w "$PWD" \
-            arblem-dev make
+            arblem-dev make WERROR=1
+
+      - name: Run clang-tidy
+        run: |
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD:$PWD" \
+            -w "$PWD" \
+            arblem-dev make tidy WERROR=1
 
       - name: Run smoke test
         run: |
