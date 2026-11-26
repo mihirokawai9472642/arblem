@@ -70,18 +70,21 @@ Run these from the project root:
 ## Commands
 
 Each target runs in the container as `docker compose exec dev make <target>`,
-and the matching Zed task (`build` for the default target) does the same.
+and most targets have a matching Zed task (`build` for the default target).
 
-| Target   | What it does                                                                         |
-| -------- | ------------------------------------------------------------------------------------ |
-| (none)   | Builds `build/kernel.elf`, the user programs, `build/mkfs`, `build/disk.img`, and `build/compile_commands.json` |
-| `run`    | Boots the kernel on OpenSBI in QEMU, with the serial console in the terminal         |
-| `test`   | Runs the smoke test in QEMU                                                          |
-| `debug`  | Boots halted at the first instruction, waiting for LLDB on port 1234                 |
-| `lldb`   | Starts LLDB attached to the waiting QEMU instance (from a second terminal)           |
-| `format` | Formats C sources and headers (`kernel/`, `lib/`, `inc/`, `user/`, `tools/`) with `clang-format` |
-| `tidy`   | Checks C sources (`kernel/`, `lib/`, `user/`) with `clang-tidy`                      |
-| `clean`  | Deletes `build/`                                                                     |
+| Target         | What it does                                                                         |
+| -------------- | ------------------------------------------------------------------------------------ |
+| (none)         | Builds `build/kernel.elf`, the user programs, `build/mkfs`, `build/disk.img`, and `build/compile_commands.json` |
+| `run`          | Boots the kernel on OpenSBI in QEMU, with the serial console in the terminal         |
+| `test`         | Runs the smoke test in QEMU                                                          |
+| `debug`        | Boots halted at the first instruction, waiting for LLDB on port 1234                 |
+| `lldb`         | Starts LLDB attached to the waiting QEMU instance (from a second terminal)           |
+| `format`       | Formats C sources and headers (`kernel/`, `lib/`, `inc/`, `user/`, `tools/`) with `clang-format` |
+| `format-check` | Checks that C sources and headers match `.clang-format` without modifying files      |
+| `tidy`         | Checks C sources (`kernel/`, `lib/`, `user/`) with `clang-tidy`                      |
+| `clean`        | Deletes `build/`                                                                     |
+
+Pass `WERROR=1` to `make` or `make tidy` to treat warnings as errors (used in CI).
 
 To debug, run the `debug` task (or `docker compose exec dev make debug`), then
 the `lldb` task, which opens in a new terminal. The Zed task `shell` opens a
@@ -130,6 +133,7 @@ and SSH are not available in the container.
 | `Dockerfile`, `compose.yaml`   | Development container                                    |
 | `.clang-format`, `.clang-tidy` | Formatting and static analysis settings                  |
 | `.zed/`                        | Zed tasks and container language server configuration    |
+| `.github/workflows/`           | Continuous integration workflow (`ci.yml`)               |
 | `AGENTS.md`                    | Instructions for coding agents                           |
 
 ## Documentation

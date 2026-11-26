@@ -48,18 +48,20 @@ kernel/*.c, kernel/*.S ───────────────────
   the rules written in the Makefile apply.
 
 Run each target in the container as `docker compose exec dev make <target>`,
-or spawn the matching Zed task (`build` for the default target):
+or spawn the matching Zed task for supported targets (`build` for the default
+target):
 
-| Target   | Does                                                                                |
-|----------|-------------------------------------------------------------------------------------|
-| (none)   | Build `build/kernel.elf`, the user programs, `build/mkfs`, `build/disk.img`, and `build/compile_commands.json` |
-| `run`    | Build, then boot `build/kernel.elf` and `build/disk.img` in QEMU with Modern VirtIO-blk |
-| `test`   | Build, create a fresh 2 MiB `build/test.img` with `build/mkfs`, and run the smoke test |
-| `debug`  | Build, then boot halted at the first instruction waiting for LLDB on port 1234      |
-| `lldb`   | Attach LLDB to the waiting QEMU instance (from a second terminal)                   |
-| `format` | Format C sources and headers (`kernel/`, `lib/`, `inc/`, `user/`, `tools/`) with `clang-format` |
-| `tidy`   | Run `clang-tidy` on all C sources using `build/compile_commands.json`               |
-| `clean`  | Delete `build/`                                                                     |
+| Target         | Does                                                                                |
+|----------------|-------------------------------------------------------------------------------------|
+| (none)         | Build `build/kernel.elf`, the user programs, `build/mkfs`, `build/disk.img`, and `build/compile_commands.json` |
+| `run`          | Build, then boot `build/kernel.elf` and `build/disk.img` in QEMU with Modern VirtIO-blk |
+| `test`         | Build, create a fresh 2 MiB `build/test.img` with `build/mkfs`, and run the smoke test |
+| `debug`        | Build, then boot halted at the first instruction waiting for LLDB on port 1234      |
+| `lldb`         | Attach LLDB to the waiting QEMU instance (from a second terminal)                   |
+| `format`       | Format C sources and headers (`kernel/`, `lib/`, `inc/`, `user/`, `tools/`) with `clang-format` |
+| `format-check` | Check C sources and headers against `.clang-format` without modifying files         |
+| `tidy`         | Run `clang-tidy` on all C sources using `build/compile_commands.json`               |
+| `clean`        | Delete `build/`                                                                     |
 
 `make run` and `make debug` boot QEMU with `-smp 2` (two harts) and attach
 `build/disk.img` using `-global virtio-mmio.force-legacy=false` for Modern VirtIO
@@ -71,12 +73,18 @@ automated tests do not dirty `build/disk.img`.
 C formatting and static checks are configured in `.clang-format` and
 `.clang-tidy`:
 
-- `make format` formats C sources and headers in `kernel/`, `lib/`, `inc/` and
-  `user/`. Assembly files (`.S`) are not covered.
+- `make format` formats C sources and headers in `kernel/`, `lib/`, `inc/`,
+  `user/`, and `tools/`. Assembly files (`.S`) are not covered.
+- `make format-check` runs `clang-format --dry-run --Werror` over the same
+  files to check formatting without modifying them.
 - `make tidy` runs `clang-tidy` (`clang-analyzer-*` and `bugprone-*`, with
   `bugprone-easily-swappable-parameters` and `bugprone-reserved-identifier`
   disabled) across `kernel/*.c`, `lib/*.c` and `user/*.c`. `.zed/settings.json`
   runs `clangd` inside the container, so the same diagnostics appear in Zed.
+- Passing `WERROR=1` adds `-Werror` to compiler/assembler flags (`make WERROR=1`)
+  and `--warnings-as-errors='*'` to `clang-tidy` (`make tidy WERROR=1`). Keeping
+  it optional leaves `-Werror` out of `build/compile_commands.json` during
+  local editing while letting CI reject any warning.
 - `.zed/settings.json` also runs `riscv-asm-lsp` (installed in the container at
   the version pinned in the `Dockerfile`) for `kernel/*.S`, through the Zed
   RISC-V Assembly extension. It takes each file's flags (`-march=rv64gc`,
@@ -129,6 +137,22 @@ It then checks the log and disk image:
 
 The test fails at once if the log contains `panic: `, or if an expected line
 does not appear within 20 seconds.
+
+## Continuous integration
+
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on every `push`
+to `main` and every `pull_request` targeting `main`:
+
+1. Builds the development image from `Dockerfile` using Docker Buildx and the
+   GitHub Actions layer cache (`type=gha`, `mode=max`), loading `arblem-dev`
+   into the runner's Docker engine.
+2. Runs `make format-check`, `make WERROR=1`, `make tidy WERROR=1`, and
+   `make test` inside `arblem-dev`, passing `--user "$(id -u):$(id -g)"` and
+   mounting `$PWD` at the same path so `build/` stays writable across steps.
+3. Uses `concurrency` to cancel outdated runs on the same pull request when new
+   commits are pushed, while letting `main` pushes run to completion.
+4. On failure, prints `build/test.log` (if present) to the job log and uploads
+   it as the `smoke-test-log` artifact with a 7-day retention period.
 
 ## Debugging
 
