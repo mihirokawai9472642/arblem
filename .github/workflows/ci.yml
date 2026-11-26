@@ -1,0 +1,42 @@
+# Continuous integration: build the kernel and user programs, and run the smoke
+# test inside the development container.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# This workflow only reads the repository; keep token permissions minimal.
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Build development container
+        run: docker build -t arblem-dev .
+
+      # Run as the runner's UID/GID so files created under build/ stay writable
+      # across steps (the image's dev user is UID 1000, while GitHub runners
+      # use UID 1001). Mount at $PWD so paths match the host.
+      - name: Build
+        run: |
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD:$PWD" \
+            -w "$PWD" \
+            arblem-dev make
+
+      - name: Run smoke test
+        run: |
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD:$PWD" \
+            -w "$PWD" \
+            arblem-dev make test
